@@ -1,4 +1,10 @@
 package com.example.individualsapi.client.dto;
 
-public record KeycloakUserInfoResponse() {
+import java.util.List;
+
+public record KeycloakUserInfoResponse(
+        String sub,
+        String email,
+        List<String> roles
+) {
 }

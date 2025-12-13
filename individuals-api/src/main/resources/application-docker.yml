@@ -1,0 +1,21 @@
+server:
+  port: 8081
+
+spring:
+  config:
+    activate:
+      on-profile: docker
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://individuals-keycloak:8080/realms/individuals
+
+keycloak:
+  base-url: http://individuals-keycloak:8080
+  realm: individuals
+  client-id: individuals-client
+  client-secret: secret
+  admin:
+    username: admin
+    password: admin
