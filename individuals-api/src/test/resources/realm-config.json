@@ -1,0 +1,14 @@
+{
+  "realm": "individuals",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "individuals-client",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "secret",
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true
+    }
+  ]
+}

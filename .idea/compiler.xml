@@ -15,6 +15,7 @@
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="individuals-api" options="-parameters" />
+      <module name="individuals-api.integrationTest" options="-parameters" />
       <module name="individuals-api.main" options="-parameters" />
       <module name="individuals-api.test" options="-parameters" />
     </option>

@@ -1,0 +1,30 @@
+{
+  "uid": "individuals-observability",
+  "title": "Individuals API - Observability",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Individuals API (up)",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "up{job=\"individuals-api\"}", "refId": "A" }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "Keycloak (up)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "up{job=\"keycloak\"}", "refId": "A" }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    }
+  ]
+}

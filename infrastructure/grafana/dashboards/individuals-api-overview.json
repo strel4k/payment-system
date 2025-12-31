@@ -1,0 +1,68 @@
+{
+  "uid": "ps-individuals-api",
+  "title": "Payment System — Individuals API",
+  "tags": ["payment-system", "individuals-api"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "App started time (s)",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "application_started_time_seconds{main_application_class=\"com.example.individualsapi.IndividualsApiApplication\"}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP requests rate (req/s)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"individuals-api\"}[1m]))"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Individuals API logs (Loki)",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 12 },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"docker\",service=\"individuals-api\"}"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "query": "prometheus"
+      },
+      {
+        "type": "datasource",
+        "name": "DS_LOKI",
+        "label": "Loki",
+        "query": "loki"
+      }
+    ]
+  }
+}

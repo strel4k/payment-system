@@ -34,7 +34,7 @@ public class AuthController {
         return tokenService.login(request);
     }
 
-    @PostMapping(value = "/refreshToken", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/refresh-token", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<TokenResponse> refreshToken(@RequestBody TokenRefreshRequest request) {
         return tokenService.refresh(request);
     }

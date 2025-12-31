@@ -1,0 +1,138 @@
+{
+  "uid": "payment-system-overview",
+  "title": "Payment System Overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "tags": ["payment-system", "overview"],
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Keycloak UP",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{ "refId": "A", "expr": "up{job=\"keycloak\"}", "instant": true }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Individuals API UP",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{ "refId": "A", "expr": "up{job=\"individuals-api\"}", "instant": true }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Keycloak scrape (s)",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{ "refId": "A", "expr": "scrape_duration_seconds{job=\"keycloak\"}", "instant": true }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Individuals scrape (s)",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{ "refId": "A", "expr": "scrape_duration_seconds{job=\"individuals-api\"}", "instant": true }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Individuals API: readiness time (s)",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "refId": "A", "expr": "application_ready_time_seconds{main_application_class=~\".*IndividualsApiApplication.*\"}" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Individuals API: HTTP req/s (if traffic)",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_server_requests_seconds_count{job=\"individuals-api\"}[1m]))" }
+      ],
+      "description": "Если метрика http_server_requests_seconds_count отсутствует — панель будет пустой (это нормально)."
+    },
+
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Individuals API: JVM heap used (bytes)",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "refId": "A", "expr": "sum(jvm_memory_used_bytes{job=\"individuals-api\",area=\"heap\"})" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Keycloak: samples scraped",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "refId": "A", "expr": "scrape_samples_scraped{job=\"keycloak\"}" }
+      ]
+    },
+
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "Logs: Individuals API",
+      "gridPos": { "x": 0, "y": 19, "w": 12, "h": 10 },
+      "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+      "targets": [
+        { "refId": "A", "expr": "{job=\"docker\",service=\"individuals-api\"}" }
+      ],
+      "options": { "dedupStrategy": "none", "showLabels": false, "showTime": true, "wrapLogMessage": true }
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "Logs: Keycloak",
+      "gridPos": { "x": 12, "y": 19, "w": 12, "h": 10 },
+      "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+      "targets": [
+        { "refId": "A", "expr": "{job=\"docker\",service=\"keycloak\"}" }
+      ],
+      "options": { "dedupStrategy": "none", "showLabels": false, "showTime": true, "wrapLogMessage": true }
+    }
+  ]
+}

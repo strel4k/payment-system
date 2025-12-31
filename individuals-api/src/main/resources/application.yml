@@ -1,5 +1,5 @@
 server:
-  port: 8081
+  port: ${SERVER_PORT:8081}
 
 spring:
   application:
@@ -9,25 +9,35 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8080/realms/individuals
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:${KEYCLOAK_BASE_URL:http://localhost:8080}/realms/${KEYCLOAK_REALM:individuals}}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus,metrics
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http:
+          server:
+            requests: true
+      percentiles:
+        http:
+          server:
+            requests: 0.95,0.99
   endpoint:
     health:
       show-details: always
 
 keycloak:
-  base-url: http://localhost:8080
-  realm: individuals
-  client-id: individuals-client
-  client-secret: secret
+  base-url: ${KEYCLOAK_BASE_URL:http://localhost:8080}
+  realm: ${KEYCLOAK_REALM:individuals}
+  client-id: ${KEYCLOAK_CLIENT_ID:individuals-client}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET:secret}
   admin:
-    username: admin
-    password: admin
+    username: ${KEYCLOAK_ADMIN_USERNAME:admin}
+    password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
 
 logging:
   level:

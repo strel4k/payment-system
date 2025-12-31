@@ -70,6 +70,29 @@ tasks.withType<Test> {
 //    enabled = false
 }
 
+val integrationTestSourceSet = sourceSets.create("integrationTest") {
+    compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
+    runtimeClasspath += output + compileClasspath
+    resources.srcDir("src/integrationTest/resources")
+    java.srcDir("src/integrationTest/java")
+}
+
+configurations[integrationTestSourceSet.implementationConfigurationName].extendsFrom(configurations.testImplementation.get())
+configurations[integrationTestSourceSet.runtimeOnlyConfigurationName].extendsFrom(configurations.testRuntimeOnly.get())
+
+val integrationTest = tasks.register<Test>("integrationTest") {
+    description = "Runs integration tests."
+    group = "verification"
+    testClassesDirs = integrationTestSourceSet.output.classesDirs
+    classpath = integrationTestSourceSet.runtimeClasspath
+    useJUnitPlatform()
+    shouldRunAfter(tasks.test)
+}
+
+tasks.check {
+    dependsOn(integrationTest)
+}
+
 // ============== OpenAPI генерация DTO ==============
 openApiGenerate {
     generatorName.set("java")

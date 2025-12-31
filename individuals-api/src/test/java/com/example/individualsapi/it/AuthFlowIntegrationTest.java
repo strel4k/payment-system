@@ -2,155 +2,164 @@ package com.example.individualsapi.it;
 
 import com.example.dto.TokenResponse;
 import com.example.dto.UserInfoResponse;
-import com.example.dto.UserLoginRequest;
-import com.example.dto.UserRegistrationRequest;
-import com.example.individualsapi.service.TokenService;
-import com.example.individualsapi.service.UserService;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import reactor.core.publisher.Mono;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.MountableFile;
+import org.testcontainers.containers.wait.strategy.Wait;
 
-import java.time.OffsetDateTime;
-import java.util.List;
+import java.time.Duration;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
-import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt;
-
-@SpringBootTest(
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT
-)
+@Testcontainers
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
 class AuthFlowIntegrationTest {
+
+    @BeforeAll
+    static void disableHttpsRequirementForTestKeycloak() throws Exception {keycloak.execInContainer("sh", "-lc",
+                "/opt/keycloak/bin/kcadm.sh config credentials " +
+                        "--server http://localhost:8080 " +
+                        "--realm master " +
+                        "--user admin --password admin && " +
+                        "/opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE && " +
+                        "/opt/keycloak/bin/kcadm.sh update realms/individuals -s sslRequired=NONE"
+        );
+    }
 
     @Autowired
     private WebTestClient webTestClient;
 
-    @MockBean
-    private UserService userService;
+    @Container
+    static final GenericContainer<?> keycloak = new GenericContainer<>("quay.io/keycloak/keycloak:26.2")
+            .withExposedPorts(8080)
+            .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
+            .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+            .withEnv("KC_HEALTH_ENABLED", "true")
+            .withEnv("KC_METRICS_ENABLED", "true")
+            .withCopyFileToContainer(
+                    MountableFile.forClasspathResource("realm-config.json"),
+                    "/opt/keycloak/data/import/realm-config.json"
+            )
+            .withCommand("start-dev", "--import-realm")
+            .waitingFor(
+                    Wait.forHttp("/")
+                            .forPort(8080)
+                            .withStartupTimeout(Duration.ofMinutes(2))
+            );
 
-    @MockBean
-    private TokenService tokenService;
+    @DynamicPropertySource
+    static void props(DynamicPropertyRegistry r) {
+        String baseUrl = "http://" + keycloak.getHost() + ":" + keycloak.getMappedPort(8080);
+
+        r.add("keycloak.base-url", () -> baseUrl);
+        r.add("keycloak.realm", () -> "individuals");
+        r.add("keycloak.client-id", () -> "individuals-client");
+        r.add("keycloak.client-secret", () -> "secret");
+        r.add("keycloak.admin.username", () -> "admin");
+        r.add("keycloak.admin.password", () -> "admin");
+
+        r.add("spring.security.oauth2.resourceserver.jwt.issuer-uri",
+                () -> baseUrl + "/realms/individuals");
+    }
 
     @Test
-    @DisplayName("Регистрация: /v1/auth/registration возвращает токены")
-    void registrationFlow_returnsTokenResponse() {
-        UserRegistrationRequest request = new UserRegistrationRequest();
-        request.setEmail("new-user@example.com");
-        request.setPassword("Qwe12345!");
-        request.setConfirmPassword("Qwe12345!");
+    @DisplayName("Registration -> Me: создаём пользователя в Keycloak и читаем /me по access_token")
+    void registration_then_me_returns_user_info() {
 
-        TokenResponse tokenResponse = new TokenResponse();
-        tokenResponse.setAccessToken("reg-access");
-        tokenResponse.setRefreshToken("reg-refresh");
-        tokenResponse.setExpiresIn(300);
-        tokenResponse.setTokenType("Bearer");
+        String email = "it-user-" + System.currentTimeMillis() + "@example.com";
+        String password = "Qwe12345!";
 
-        when(userService.register(any(UserRegistrationRequest.class)))
-                .thenReturn(Mono.just(tokenResponse));
+        String registrationJson = """
+                {
+                  "email": "%s",
+                  "password": "%s",
+                  "confirm_password": "%s"
+                }
+                """.formatted(email, password, password);
+
+        TokenResponse regTokens = webTestClient.post()
+                .uri("/v1/auth/registration")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(registrationJson)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
+                .expectBody(TokenResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        org.junit.jupiter.api.Assertions.assertNotNull(regTokens);
+        org.junit.jupiter.api.Assertions.assertNotNull(regTokens.getAccessToken());
+        org.junit.jupiter.api.Assertions.assertFalse(regTokens.getAccessToken().isBlank());
+
+        UserInfoResponse me = webTestClient.get()
+                .uri("/v1/auth/me")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + regTokens.getAccessToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
+                .expectBody(UserInfoResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        org.junit.jupiter.api.Assertions.assertNotNull(me);
+        org.junit.jupiter.api.Assertions.assertNotNull(me.getId());
+        org.junit.jupiter.api.Assertions.assertEquals(email, me.getEmail());
+    }
+
+    @Test
+    @DisplayName("Login: после регистрации логинимся через password grant и получаем access_token")
+    void login_returns_tokens() {
+
+        String email = "it-login-" + System.currentTimeMillis() + "@example.com";
+        String password = "Qwe12345!";
+
+        String registrationJson = """
+                {
+                  "email": "%s",
+                  "password": "%s",
+                  "confirm_password": "%s"
+                }
+                """.formatted(email, password, password);
 
         webTestClient.post()
                 .uri("/v1/auth/registration")
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
+                .bodyValue(registrationJson)
                 .exchange()
-                .expectStatus().isCreated()
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                .expectBody()
-                .jsonPath("$.access_token").isEqualTo("reg-access")
-                .jsonPath("$.refresh_token").isEqualTo("reg-refresh")
-                .jsonPath("$.token_type").isEqualTo("Bearer");
-    }
+                .expectStatus().isCreated();
 
-    @Test
-    @DisplayName("Логин: /v1/auth/login возвращает токены")
-    void loginFlow_returnsTokenResponse() {
-        UserLoginRequest request = new UserLoginRequest();
-        request.setEmail("test3@example.com");
-        request.setPassword("Qwe12345!");
+        String loginJson = """
+                {
+                  "email": "%s",
+                  "password": "%s"
+                }
+                """.formatted(email, password);
 
-        TokenResponse tokenResponse = new TokenResponse();
-        tokenResponse.setAccessToken("login-access");
-        tokenResponse.setRefreshToken("login-refresh");
-        tokenResponse.setExpiresIn(300);
-        tokenResponse.setTokenType("Bearer");
-
-        when(tokenService.login(any(UserLoginRequest.class)))
-                .thenReturn(Mono.just(tokenResponse));
-
-        webTestClient.post()
+        TokenResponse loginTokens = webTestClient.post()
                 .uri("/v1/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
+                .bodyValue(loginJson)
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                .expectBody()
-                .jsonPath("$.access_token").isEqualTo("login-access")
-                .jsonPath("$.refresh_token").isEqualTo("login-refresh")
-                .jsonPath("$.token_type").isEqualTo("Bearer");
-    }
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
+                .expectBody(TokenResponse.class)
+                .returnResult()
+                .getResponseBody();
 
-    @Test
-    @DisplayName("Refresh: /v1/auth/refresh-token возвращает новый токен")
-    void refreshFlow_returnsNewTokenResponse() {
-        TokenResponse tokenResponse = new TokenResponse();
-        tokenResponse.setAccessToken("ref-access");
-        tokenResponse.setRefreshToken("ref-refresh");
-        tokenResponse.setExpiresIn(300);
-        tokenResponse.setTokenType("Bearer");
-
-        when(tokenService.refresh(any()))
-                .thenReturn(Mono.just(tokenResponse));
-
-        String body = """
-                {
-                  "refresh_token": "some-refresh-token"
-                }
-                """;
-
-        webTestClient.post()
-                .uri("/v1/auth/refresh-token")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(body)
-                .exchange()
-                .expectStatus().isOk()
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                .expectBody()
-                .jsonPath("$.access_token").isEqualTo("ref-access")
-                .jsonPath("$.refresh_token").isEqualTo("ref-refresh")
-                .jsonPath("$.token_type").isEqualTo("Bearer");
-    }
-
-    @Test
-    @DisplayName("ME: /v1/auth/me возвращает информацию о текущем пользователе")
-    void meFlow_returnsCurrentUserInfo() {
-        UserInfoResponse userInfo = new UserInfoResponse();
-        userInfo.setId("1eaf40a8-d74f-4db2-aac3-f04fde97c29e");
-        userInfo.setEmail("test3@example.com");
-        userInfo.setRoles(List.of("offline_access", "default-roles-individuals", "uma_authorization"));
-        userInfo.setCreatedAt(OffsetDateTime.parse("2025-11-29T00:00:00Z"));
-
-        when(userService.getCurrentUser(any(Jwt.class)))
-                .thenReturn(Mono.just(userInfo));
-
-        webTestClient
-                .mutateWith(mockJwt())
-                .get()
-                .uri("/v1/auth/me")
-                .exchange()
-                .expectStatus().isOk()
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                .expectBody()
-                .jsonPath("$.id").isEqualTo("1eaf40a8-d74f-4db2-aac3-f04fde97c29e")
-                .jsonPath("$.email").isEqualTo("test3@example.com")
-                .jsonPath("$.roles[0]").isEqualTo("offline_access");
+        org.junit.jupiter.api.Assertions.assertNotNull(loginTokens);
+        org.junit.jupiter.api.Assertions.assertNotNull(loginTokens.getAccessToken());
+        org.junit.jupiter.api.Assertions.assertFalse(loginTokens.getAccessToken().isBlank());
     }
 }
