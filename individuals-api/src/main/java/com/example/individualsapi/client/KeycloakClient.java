@@ -36,6 +36,25 @@ public class KeycloakClient {
                 );
     }
 
+
+    public Mono<Void> createUserWithAttribute(String email, String password, String userUid) {
+        String url = props.getBaseUrl() + "/admin/realms/" + props.getRealm() + "/users";
+        KeycloakCreateUserRequest request = KeycloakCreateUserRequest.withUserUid(email, password, userUid);
+
+        log.info("Creating Keycloak user for email: {} with user_uid: {}", email, userUid);
+
+        return adminTokenStorage.getValidToken()
+                .flatMap(token -> keycloakWebClient.post()
+                        .uri(url)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .headers(h -> h.setBearerAuth(token))
+                        .bodyValue(request)
+                        .retrieve()
+                        .bodyToMono(Void.class)
+                        .doOnSuccess(v -> log.info("Keycloak user created successfully with user_uid: {}", userUid))
+                );
+    }
+
     public Mono<KeycloakTokenResponse> login(String email, String password) {
         String url = props.getBaseUrl() + "/realms/" + props.getRealm() + "/protocol/openid-connect/token";
 

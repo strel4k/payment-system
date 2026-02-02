@@ -3,9 +3,12 @@ package com.example.individualsapi.service;
 import com.example.dto.TokenResponse;
 import com.example.dto.UserInfoResponse;
 import com.example.dto.UserRegistrationRequest;
+import com.example.dto.person.CreatePersonRequest;
 import com.example.individualsapi.client.KeycloakClient;
+import com.example.individualsapi.client.PersonServiceClient;
 import com.example.individualsapi.client.dto.KeycloakTokenResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -17,11 +20,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
     private final KeycloakClient keycloakClient;
+    private final PersonServiceClient personServiceClient;
 
     public Mono<TokenResponse> register(UserRegistrationRequest request) {
         if (!request.getPassword().equals(request.getConfirmPassword())) {
@@ -31,9 +36,26 @@ public class UserService {
         String email = request.getEmail();
         String password = request.getPassword();
 
-        return keycloakClient.createUser(email, password)
-                .then(keycloakClient.login(email, password))
-                .map(this::mapToTokenResponse);
+        CreatePersonRequest personRequest = new CreatePersonRequest()
+                .email(email)
+                .firstName(request.getFirstName() != null ? request.getFirstName() : "")
+                .lastName(request.getLastName() != null ? request.getLastName() : "");
+
+        log.info("Starting user registration for email: {}", email);
+
+        return personServiceClient.createPerson(personRequest)
+                .flatMap(personResponse -> {
+                    String userId = personResponse.getUserId().toString();
+                    log.info("Person created with userId: {}", userId);
+
+                    return keycloakClient.createUserWithAttribute(email, password, userId)
+                            .doOnSuccess(v -> log.info("User created in Keycloak with user_uid: {}", userId))
+                            // Step 3: Login and return tokens
+                            .then(keycloakClient.login(email, password))
+                            .map(this::mapToTokenResponse)
+                            .doOnSuccess(tokens -> log.info("Registration completed successfully for email: {}", email));
+                })
+                .doOnError(error -> log.error("Registration failed for email: {}", email, error));
     }
 
     public Mono<UserInfoResponse> getCurrentUser(Jwt jwt) {

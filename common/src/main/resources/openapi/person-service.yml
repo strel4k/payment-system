@@ -1,0 +1,276 @@
+openapi: 3.0.3
+info:
+  title: person-service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8082
+
+paths:
+  /v1/persons:
+    post:
+      tags: [persons]
+      operationId: createPerson
+      summary: Transactional registration (user + individual + address)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePersonRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/persons/{id}:
+    get:
+      tags: [persons]
+      operationId: getPersonById
+      summary: Get person by user id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [persons]
+      operationId: updatePerson
+      summary: Transactional update (user + individual + address), with audit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePersonRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [persons]
+      operationId: deletePerson
+      summary: Transactional delete (user + individual + address)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/persons/by-email:
+    get:
+      tags: [persons]
+      operationId: getPersonByEmail
+      summary: Get person by email
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    CreatePersonRequest:
+      type: object
+      required: [email, firstName, lastName]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 1024
+        firstName:
+          type: string
+          maxLength: 32
+        lastName:
+          type: string
+          maxLength: 32
+        address:
+          $ref: '#/components/schemas/AddressRequest'
+        individual:
+          $ref: '#/components/schemas/IndividualRequest'
+
+    UpdatePersonRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          maxLength: 32
+        lastName:
+          type: string
+          maxLength: 32
+        address:
+          $ref: '#/components/schemas/AddressRequest'
+        individual:
+          $ref: '#/components/schemas/IndividualRequest'
+        filled:
+          type: boolean
+
+    AddressRequest:
+      type: object
+      properties:
+        countryId:
+          type: integer
+          format: int32
+        address:
+          type: string
+          maxLength: 128
+        zipCode:
+          type: string
+          maxLength: 32
+        city:
+          type: string
+          maxLength: 32
+        state:
+          type: string
+          maxLength: 32
+
+    IndividualRequest:
+      type: object
+      properties:
+        passportNumber:
+          type: string
+          maxLength: 32
+        phoneNumber:
+          type: string
+          maxLength: 32
+        status:
+          type: string
+          maxLength: 32
+
+    PersonResponse:
+      type: object
+      required: [userId, email]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        filled:
+          type: boolean
+        address:
+          $ref: '#/components/schemas/AddressResponse'
+        individual:
+          $ref: '#/components/schemas/IndividualResponse'
+
+    AddressResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        countryId:
+          type: integer
+          format: int32
+        address:
+          type: string
+        zipCode:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+
+    IndividualResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        passportNumber:
+          type: string
+        phoneNumber:
+          type: string
+        status:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: string

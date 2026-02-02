@@ -5,6 +5,7 @@ plugins {
     id("org.springframework.boot") version "3.5.0"
     id("io.spring.dependency-management") version "1.1.6"
     id("org.openapi.generator") version "7.9.0"
+    jacoco
 }
 
 group = "com.example"
@@ -17,11 +18,23 @@ java {
 
 repositories {
     mavenCentral()
+    maven {
+        name = "nexus"
+        url = uri("http://localhost:8091/repository/maven-releases/")
+        isAllowInsecureProtocol = true
+        credentials {
+            username = findProperty("nexusUsername")?.toString() ?: "admin"
+            password = findProperty("nexusPassword")?.toString() ?: "admin123"
+        }
+    }
 }
 
 dependencies {
-    // Версия Lombok — актуальная под новые JDK
+
     val lombokVersion = "1.18.42"
+
+    // Person Service Client from Nexus
+    implementation("com.example:person-service-client:1.0.0")
 
     // --- runtime ---
     implementation("org.springframework.boot:spring-boot-starter-webflux")
@@ -33,6 +46,10 @@ dependencies {
 
     // micrometer + prometheus
     implementation("io.micrometer:micrometer-registry-prometheus")
+
+    // OpenTelemetry for tracing
+    implementation("io.micrometer:micrometer-tracing-bridge-otel")
+    runtimeOnly("io.opentelemetry:opentelemetry-exporter-otlp")
 
     // JSON-логирование для Loki
     implementation("net.logstash.logback:logstash-logback-encoder:8.0")
@@ -121,4 +138,83 @@ sourceSets {
 // чтобы перед компиляцией Java всегда генерировались DTO
 tasks.named("compileJava") {
     dependsOn("openApiGenerate")
+}
+
+// JaCoCo configuration
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+    }
+
+    classDirectories.setFrom(
+        files(classDirectories.files.map {
+            fileTree(it) {
+                exclude(
+                    "**/dto/**",
+                    "**/api/**",
+                    "**/config/**",
+                    "**/IndividualsApiApplication.class",
+                    "**/ApiClient*.class",
+                    "**/RFC3339DateFormat.class",
+                    "**/ServerConfiguration.class",
+                    "**/JavaTimeFormatter.class",
+                    "**/ServerVariable.class",
+                    "**/StringUtil.class",
+                    "**/auth/**"
+                )
+            }
+        })
+    )
+}
+
+tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.jacocoTestReport)
+
+    violationRules {
+        rule {
+            limit {
+                minimum = "0.20".toBigDecimal()
+            }
+        }
+
+        rule {
+            element = "CLASS"
+            limit {
+                minimum = "0.20".toBigDecimal()
+            }
+
+            excludes = listOf(
+                "**.dto.*",
+                "**.api.*",
+                "**.config.*",
+                "**.IndividualsApiApplication",
+                "**.ApiClient*",
+                "**.RFC3339DateFormat",
+                "**.ServerConfiguration",
+                "**.JavaTimeFormatter",
+                "**.ServerVariable",
+                "**.StringUtil",
+                "**.auth.*",
+                "com.example.*",
+                "**.exception.GlobalExceptionHandler",
+                "**.client.*"
+            )
+        }
+    }
+}
+
+tasks.test {
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+tasks.check {
+    dependsOn(tasks.jacocoTestCoverageVerification)
 }

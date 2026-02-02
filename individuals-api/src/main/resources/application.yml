@@ -15,7 +15,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics
+        include: health,info,prometheus,metrics,mappings
   metrics:
     distribution:
       percentiles-histogram:
@@ -27,8 +27,12 @@ management:
           server:
             requests: 0.95,0.99
   endpoint:
+    mappings:
+      enabled: true
     health:
       show-details: always
+  tracing:
+    enabled: true
 
 keycloak:
   base-url: ${KEYCLOAK_BASE_URL:http://localhost:8080}
@@ -39,7 +43,12 @@ keycloak:
     username: ${KEYCLOAK_ADMIN_USERNAME:admin}
     password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
 
+person-service:
+  base-url: ${PERSON_SERVICE_BASE_URL:http://localhost:8082}
+
 logging:
+  pattern:
+    correlation: "[traceId=%X{traceId}, spanId=%X{spanId}] "
   level:
     root: INFO
     org.springframework.web: INFO

@@ -30,25 +30,48 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(WebClientResponseException.class)
     public Mono<ErrorResponse> handleWebClient(WebClientResponseException ex) {
-        log.error("Keycloak error: status={}, body={}", ex.getStatusCode(), ex.getResponseBodyAsString());
+        log.error("External service error: status={}, body={}, url={}",
+                ex.getStatusCode(), ex.getResponseBodyAsString(), ex.getRequest().getURI());
 
         ErrorResponse resp = new ErrorResponse();
 
         if (ex.getStatusCode().value() == 409) {
-            // конфликт при создании пользователя
-            resp.setError("User already exists");
+            String errorBody = ex.getResponseBodyAsString();
+            if (errorBody.contains("person-service") || errorBody.contains("email already exists")) {
+                resp.setError("User with this email already exists");
+            } else {
+                resp.setError("User already exists");
+            }
             resp.setStatus(409);
             return Mono.just(resp);
         }
 
-        if (ex.getStatusCode().value() == 400 || ex.getStatusCode().value() == 401) {
-            // ошибки при логине / refresh-token
+        if (ex.getStatusCode().value() == 400) {
+            resp.setError("Invalid request data: " + ex.getResponseBodyAsString());
+            resp.setStatus(400);
+            return Mono.just(resp);
+        }
+
+        if (ex.getStatusCode().value() == 401) {
             resp.setError("Invalid credentials or token");
             resp.setStatus(401);
             return Mono.just(resp);
         }
 
-        resp.setError("Keycloak error: " + ex.getStatusCode().value());
+        if (ex.getStatusCode().value() == 404) {
+            resp.setError("Resource not found");
+            resp.setStatus(404);
+            return Mono.just(resp);
+        }
+
+        if (ex.getStatusCode().is5xxServerError()) {
+            log.error("External service unavailable: {}", ex.getMessage());
+            resp.setError("External service temporarily unavailable, please try again later");
+            resp.setStatus(503);
+            return Mono.just(resp);
+        }
+
+        resp.setError("External service error: " + ex.getStatusCode().value());
         resp.setStatus(ex.getStatusCode().value());
         return Mono.just(resp);
     }
