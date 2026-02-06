@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 1100">
+  <defs>
+    <style>
+      .actor { fill: #08427b; stroke: #052e56; stroke-width: 2; }
+      .component { fill: #1168bd; stroke: #0e4884; stroke-width: 2; }
+      .database { fill: #2b7bb9; stroke: #1a4d7a; stroke-width: 2; }
+      .lifeline { stroke: #ccc; stroke-width: 2; stroke-dasharray: 5,5; }
+      .activation { fill: #e6f3ff; stroke: #1168bd; stroke-width: 2; }
+      .arrow { stroke: #666; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .return-arrow { stroke: #999; stroke-width: 1.5; fill: none; marker-end: url(#return-arrowhead); stroke-dasharray: 3,3; }
+      .text-title { font-family: Arial, sans-serif; font-size: 13px; font-weight: bold; }
+      .text-msg { font-family: Arial, sans-serif; font-size: 11px; fill: #333; }
+      .text-note { font-family: Arial, sans-serif; font-size: 10px; fill: #555; font-style: italic; }
+      .note-box { fill: #ffffcc; stroke: #cccc99; stroke-width: 1; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#666" />
+    </marker>
+    <marker id="return-arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#999" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="650" y="30" font-family="Arial" font-size="20" font-weight="bold" text-anchor="middle" fill="#333">
+    Sequence Diagram — User Registration Flow
+  </text>
+  
+  <!-- Participants -->
+  <rect class="actor" x="30" y="70" width="80" height="50" rx="5"/>
+  <text class="text-title" x="70" y="100" text-anchor="middle" fill="white">User</text>
+  
+  <rect class="component" x="180" y="70" width="120" height="50" rx="5"/>
+  <text class="text-title" x="240" y="95" text-anchor="middle" fill="white">Individuals</text>
+  <text class="text-title" x="240" y="110" text-anchor="middle" fill="white">API</text>
+  
+  <rect class="component" x="380" y="70" width="120" height="50" rx="5"/>
+  <text class="text-title" x="440" y="95" text-anchor="middle" fill="white">Person</text>
+  <text class="text-title" x="440" y="110" text-anchor="middle" fill="white">Service</text>
+  
+  <ellipse class="database" cx="610" cy="95" rx="60" ry="25"/>
+  <text class="text-title" x="610" y="100" text-anchor="middle" fill="white">Person DB</text>
+  
+  <rect class="component" x="730" y="70" width="100" height="50" rx="5"/>
+  <text class="text-title" x="780" y="100" text-anchor="middle" fill="white">Keycloak</text>
+  
+  <ellipse class="database" cx="940" cy="95" rx="60" ry="25"/>
+  <text class="text-title" x="940" y="100" text-anchor="middle" fill="white">KC DB</text>
+  
+  <rect class="component" x="1080" y="70" width="100" height="50" rx="5"/>
+  <text class="text-title" x="1130" y="100" text-anchor="middle" fill="white">Tempo</text>
+  
+  <!-- Lifelines -->
+  <line class="lifeline" x1="70" y1="120" x2="70" y2="1050"/>
+  <line class="lifeline" x1="240" y1="120" x2="240" y2="1050"/>
+  <line class="lifeline" x1="440" y1="120" x2="440" y2="1050"/>
+  <line class="lifeline" x1="610" y1="120" x2="610" y2="1050"/>
+  <line class="lifeline" x1="780" y1="120" x2="780" y2="1050"/>
+  <line class="lifeline" x1="940" y1="120" x2="940" y2="1050"/>
+  <line class="lifeline" x1="1130" y1="120" x2="1130" y2="1050"/>
+  
+  <!-- Interactions -->
+  <!-- 1. User -> API: POST registration -->
+  <path class="arrow" d="M 70 160 L 240 160"/>
+  <text class="text-msg" x="130" y="150">1. POST /v1/auth/registration</text>
+  <text class="text-msg" x="130" y="165">{email, password, ...}</text>
+  <rect class="activation" x="230" y="160" width="20" height="740" />
+  
+  <!-- 2. API: Generate trace_id -->
+  <rect class="note-box" x="250" y="190" width="150" height="35" rx="3"/>
+  <text class="text-note" x="325" y="205" text-anchor="middle">2. Generate trace_id</text>
+  <text class="text-note" x="325" y="220" text-anchor="middle">(OpenTelemetry)</text>
+  
+  <!-- 3. API -> Tempo: Start span -->
+  <path class="arrow" d="M 240 240 L 1130 240"/>
+  <text class="text-msg" x="600" y="230">3. Start span: registration</text>
+  
+  <!-- 4. API: Validate -->
+  <rect class="note-box" x="250" y="270" width="150" height="50" rx="3"/>
+  <text class="text-note" x="325" y="285" text-anchor="middle">4. Validate:</text>
+  <text class="text-note" x="325" y="300" text-anchor="middle">- email format</text>
+  <text class="text-note" x="325" y="315" text-anchor="middle">- password strength</text>
+  
+  <!-- 5. API -> Person Service -->
+  <path class="arrow" d="M 240 350 L 440 350"/>
+  <text class="text-msg" x="310" y="340">5. POST /v1/persons</text>
+  <text class="text-msg" x="310" y="355">{firstName, lastName, email}</text>
+  <rect class="activation" x="430" y="350" width="20" height="200" />
+  
+  <!-- 6. Person Service: Generate UUID -->
+  <rect class="note-box" x="460" y="370" width="120" height="30" rx="3"/>
+  <text class="text-note" x="520" y="390" text-anchor="middle">6. Generate user_uid</text>
+  
+  <!-- 7. Person Service -> DB: BEGIN -->
+  <path class="arrow" d="M 440 420 L 610 420"/>
+  <text class="text-msg" x="495" y="410">7. BEGIN TRANSACTION</text>
+  
+  <!-- 8. INSERT users -->
+  <path class="arrow" d="M 440 450 L 610 450"/>
+  <text class="text-msg" x="495" y="440">8. INSERT users</text>
+  
+  <!-- 9. INSERT individuals -->
+  <path class="arrow" d="M 440 480 L 610 480"/>
+  <text class="text-msg" x="495" y="470">9. INSERT individuals</text>
+  
+  <!-- 10. COMMIT -->
+  <path class="arrow" d="M 440 510 L 610 510"/>
+  <text class="text-msg" x="495" y="500">10. COMMIT</text>
+  <path class="return-arrow" d="M 610 530 L 440 530"/>
+  <text class="text-msg" x="495" y="545" text-anchor="middle">Success</text>
+  
+  <!-- 11. Person Service -> API: Return -->
+  <path class="return-arrow" d="M 440 570 L 240 570"/>
+  <text class="text-msg" x="310" y="560">11. 201 Created</text>
+  <text class="text-msg" x="310" y="575">{userId: user_uid}</text>
+  
+  <!-- 12. API -> Keycloak: Create user -->
+  <path class="arrow" d="M 240 610 L 780 610"/>
+  <text class="text-msg" x="460" y="600">12. POST /admin/users</text>
+  <text class="text-msg" x="460" y="615">{username, email, attrs:{user_uid}}</text>
+  <rect class="activation" x="770" y="610" width="20" height="100" />
+  
+  <!-- 13. Keycloak -> KC DB -->
+  <path class="arrow" d="M 780 640 L 940 640"/>
+  <text class="text-msg" x="830" y="630">13. INSERT user_entity</text>
+  <path class="return-arrow" d="M 940 660 L 780 660"/>
+  
+  <!-- 14. Keycloak -> API: Return -->
+  <path class="return-arrow" d="M 780 690 L 240 690"/>
+  <text class="text-msg" x="460" y="705">14. 201 Created</text>
+  
+  <!-- 15. API -> Keycloak: Set password -->
+  <path class="arrow" d="M 240 730 L 780 730"/>
+  <text class="text-msg" x="460" y="720">15. POST /reset-password</text>
+  <rect class="activation" x="770" y="730" width="20" height="60" />
+  
+  <!-- 16. Keycloak -> KC DB -->
+  <path class="arrow" d="M 780 750 L 940 750"/>
+  <text class="text-msg" x="830" y="740">16. UPDATE credential</text>
+  <path class="return-arrow" d="M 780 770 L 240 770"/>
+  <text class="text-msg" x="460" y="785">17. 204 No Content</text>
+  
+  <!-- 18. API -> Keycloak: Token -->
+  <path class="arrow" d="M 240 810 L 780 810"/>
+  <text class="text-msg" x="460" y="800">18. POST /token</text>
+  <text class="text-msg" x="460" y="815">{grant_type=password}</text>
+  <rect class="activation" x="770" y="810" width="20" height="100" />
+  
+  <!-- 19. Keycloak: Validate & Generate -->
+  <rect class="note-box" x="800" y="830" width="130" height="50" rx="3"/>
+  <text class="text-note" x="865" y="845" text-anchor="middle">19. Validate password</text>
+  <text class="text-note" x="865" y="860" text-anchor="middle">20. Generate JWT</text>
+  <text class="text-note" x="865" y="875" text-anchor="middle">access & refresh tokens</text>
+  
+  <!-- 21. Keycloak -> API: Return tokens -->
+  <path class="return-arrow" d="M 780 920 L 240 920"/>
+  <text class="text-msg" x="460" y="910">21. 200 OK</text>
+  <text class="text-msg" x="460" y="925">{access_token, refresh_token}</text>
+  
+  <!-- 22. API -> Tempo: End span -->
+  <path class="arrow" d="M 240 960 L 1130 960"/>
+  <text class="text-msg" x="600" y="950">22. End span (duration, status=OK)</text>
+  
+  <!-- 23. API -> User: Return -->
+  <path class="return-arrow" d="M 240 1000 L 70 1000"/>
+  <text class="text-msg" x="130" y="990">23. 200 OK</text>
+  <text class="text-msg" x="130" y="1005">{access_token, refresh_token}</text>
+  
+  <!-- Final note -->
+  <rect class="note-box" x="30" y="1030" width="180" height="30" rx="3"/>
+  <text class="text-note" x="120" y="1045" text-anchor="middle">✅ Registration complete!</text>
+  <text class="text-note" x="120" y="1060" text-anchor="middle">User receives JWT tokens</text>
+</svg>
