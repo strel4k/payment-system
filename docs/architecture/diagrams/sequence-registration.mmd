@@ -41,36 +41,74 @@ sequenceDiagram
 
     Note over API: Person created successfully<br/>with user_uid
 
-    API->>+KC: POST /admin/realms/individuals/users<br/>{username=email,<br/>email, firstName, lastName,<br/>enabled=true,<br/>attributes: {user_uid}}
+    alt Keycloak user creation succeeds
+        API->>+KC: POST /admin/realms/individuals/users<br/>{username=email,<br/>email, firstName, lastName,<br/>enabled=true,<br/>attributes: {user_uid}}
 
-    KC->>+KDB: INSERT INTO user_entity<br/>(username, email, realm_id)
-    KDB-->>-KC: OK
+        KC->>+KDB: INSERT INTO user_entity<br/>(username, email, realm_id)
+        KDB-->>-KC: OK
 
-    KC->>KDB: INSERT INTO user_attribute<br/>(user_id, name="user_uid",<br/>value=user_uid)
+        KC->>KDB: INSERT INTO user_attribute<br/>(user_id, name="user_uid",<br/>value=user_uid)
 
-    KC-->>-API: 201 Created<br/>Location: .../users/{keycloak_id}
+        KC-->>-API: 201 Created<br/>Location: .../users/{keycloak_id}
 
-    Note over API: Keycloak user created<br/>with user_uid attribute
+        Note over API: Keycloak user created<br/>with user_uid attribute
 
-    API->>+KC: POST /admin/realms/individuals/users/{keycloak_id}/reset-password<br/>{value=password, temporary=false}
-    KC->>KDB: UPDATE credential<br/>SET password_hash
-    KC-->>-API: 204 No Content
+        API->>+KC: POST /admin/realms/individuals/users/{keycloak_id}/reset-password<br/>{value=password, temporary=false}
+        KC->>KDB: UPDATE credential<br/>SET password_hash
+        KC-->>-API: 204 No Content
 
-    Note over API: Password set successfully
+        Note over API: Password set successfully
 
-    API->>+KC: POST /realms/individuals/protocol/openid-connect/token<br/>{grant_type=password,<br/>username=email, password}
+        API->>+KC: POST /realms/individuals/protocol/openid-connect/token<br/>{grant_type=password,<br/>username=email, password}
 
-    KC->>KDB: SELECT * FROM user_entity<br/>WHERE username=email
-    KDB-->>KC: User found
+        KC->>KDB: SELECT * FROM user_entity<br/>WHERE username=email
+        KDB-->>KC: User found
 
-    KC->>KC: Validate password hash
+        KC->>KC: Validate password hash
 
-    KC->>KC: Generate JWT tokens:<br/>- access_token (5 min)<br/>- refresh_token (30 min)
+        KC->>KC: Generate JWT tokens:<br/>- access_token (5 min)<br/>- refresh_token (30 min)
 
-    KC-->>-API: 200 OK<br/>{access_token,<br/>refresh_token,<br/>expires_in=300}
+        KC-->>-API: 200 OK<br/>{access_token,<br/>refresh_token,<br/>expires_in=300}
 
-    API->>Tempo: End span: registration<br/>(duration, status=OK)
+        API->>Tempo: End span: registration<br/>(duration, status=OK)
 
-    API-->>-User: 200 OK<br/>{access_token,<br/>refresh_token,<br/>expires_in, token_type}
+        API-->>User: 200 OK<br/>{access_token,<br/>refresh_token,<br/>expires_in, token_type}
 
-    Note over User: Registration complete!<br/>User receives JWT tokens
+        Note over User: Registration complete!<br/>User receives JWT tokens
+
+    else Keycloak user creation fails
+        API->>+KC: POST /admin/realms/individuals/users
+        KC-->>-API: 409 Conflict / 500 Error
+
+        Note over API: ⚠️ Keycloak failed!<br/>COMPENSATING TRANSACTION
+
+        API->>+PS: DELETE /v1/persons/{user_uid}
+
+        Note over PS: Start child span:<br/>rollback_person
+
+        PS->>+DB: BEGIN TRANSACTION
+
+        PS->>DB: DELETE FROM individuals<br/>WHERE user_id=user_uid
+        DB-->>PS: OK
+
+        PS->>DB: DELETE FROM users<br/>WHERE id=user_uid
+        DB-->>PS: OK
+
+        PS->>DB: COMMIT
+        DB-->>-PS: Transaction committed
+
+        Note over PS: Envers audit:<br/>DEL records in _aud tables
+
+        PS-->>-API: 204 No Content
+
+        Note over API: ✅ Rollback successful<br/>Person deleted from DB
+
+        API->>Tempo: End span: registration<br/>(duration, status=ERROR)
+
+        API-->>User: 500 Internal Server Error<br/>{error: "Registration failed"}
+
+        Note over User: Registration failed!<br/>No orphaned data
+
+    end
+
+    deactivate API

@@ -50,7 +50,21 @@ public class UserService {
 
                     return keycloakClient.createUserWithAttribute(email, password, userId)
                             .doOnSuccess(v -> log.info("User created in Keycloak with user_uid: {}", userId))
-                            // Step 3: Login and return tokens
+                            .onErrorResume(keycloakError -> {
+                                log.error("Keycloak user creation failed for email: {}, rolling back person creation", email, keycloakError);
+
+                                RuntimeException registrationError = new RuntimeException(
+                                        "Registration failed: " + keycloakError.getMessage(),
+                                        keycloakError
+                                );
+
+                                return personServiceClient.deletePerson(personResponse.getUserId())
+                                        .doOnSuccess(v -> log.info("Successfully rolled back person with userId: {}", userId))
+                                        .doOnError(deleteError -> log.error("CRITICAL: Failed to rollback person with userId: {}. Manual cleanup required!", userId, deleteError))
+                                        .thenReturn(true)
+                                        .onErrorReturn(false)
+                                        .<Void>flatMap(deleteSucceeded -> Mono.error(registrationError));  // Cast to Mono<Void>
+                            })
                             .then(keycloakClient.login(email, password))
                             .map(this::mapToTokenResponse)
                             .doOnSuccess(tokens -> log.info("Registration completed successfully for email: {}", email));

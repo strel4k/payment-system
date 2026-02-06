@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.util.UUID;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -43,5 +45,18 @@ public class PersonServiceClient {
                 .bodyToMono(PersonResponse.class)
                 .doOnSuccess(response -> log.debug("Person fetched successfully: {}", response.getUserId()))
                 .doOnError(error -> log.error("Failed to fetch person by email: {}", email, error));
+    }
+
+    public Mono<Void> deletePerson(UUID userId) {
+        String url = props.getBaseUrl() + "/v1/persons/" + userId;
+
+        log.info("Deleting person from person-service with userId: {}", userId);
+
+        return personServiceWebClient.delete()
+                .uri(url)
+                .retrieve()
+                .bodyToMono(Void.class)
+                .doOnSuccess(v -> log.info("Person deleted successfully with userId: {}", userId))
+                .doOnError(error -> log.error("Failed to delete person with userId: {}", userId, error));
     }
 }

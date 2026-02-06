@@ -15,7 +15,7 @@
 
 Показывает общую картину системы и взаимодействие с внешними компонентами.
 
-![Context Diagram](docs/architecture/diagrams/context-diagram.svg)
+![Context Diagram](./docs/architecture/diagrams/context-diagram.svg)
 
 **Ключевые компоненты**:
 - 👤 **User** — конечный пользователь
@@ -268,6 +268,110 @@ User Request (trace_id: abc123)
 ```
 
 ---
+
+## Error Handling & Compensating Transactions
+
+### Проблема распределённых транзакций
+
+В микросервисной архитектуре невозможно использовать классические ACID транзакции между сервисами:
+- **Person Service** имеет свою PostgreSQL БД
+- **Keycloak** имеет свою PostgreSQL БД
+- Нет distributed transaction coordinator (2PC не используется)
+
+### Решение: Compensating Transactions (Saga Pattern)
+
+При ошибке на одном из шагов выполняется **компенсирующая транзакция** для отката изменений.
+
+**Визуализация:** См. [Sequence Diagram: Registration Flow](./docs/architecture/sequence-registration.md#error-path-компенсирующая-транзакция)
+
+#### Пример: User Registration Flow
+
+**Happy Path:**
+1. ✅ Создать Person в `person-service`
+2. ✅ Создать User в Keycloak
+3. ✅ Установить пароль
+4. ✅ Получить JWT токены
+
+**Error Path (Keycloak fails):**
+1. ✅ Создать Person в `person-service`
+2. ❌ Создать User в Keycloak → **409 Conflict**
+3. 🔄 **ROLLBACK**: Удалить Person из БД через `DELETE /v1/persons/{id}`
+4. ❌ Вернуть ошибку пользователю
+
+### Реализация в коде
+```java
+// UserService.java
+public Mono<TokenResponse> register(UserRegistrationRequest request) {
+    return personServiceClient.createPerson(request)
+        .flatMap(personResponse -> {
+            String userId = personResponse.getUserId().toString();
+            
+            return keycloakClient.createUserWithAttribute(email, password, userId)
+                .onErrorResume(keycloakError -> {
+                    // Компенсирующая транзакция
+                    RuntimeException registrationError = new RuntimeException(
+                        "Registration failed: " + keycloakError.getMessage(),
+                        keycloakError  // Сохраняем оригинальную ошибку
+                    );
+                    
+                    return personServiceClient.deletePerson(personResponse.getUserId())
+                        .doOnSuccess(v -> log.info("✅ Rollback successful"))
+                        .doOnError(deleteError -> 
+                            log.error("🚨 CRITICAL: Rollback failed! Manual cleanup required")
+                        )
+                        .thenReturn(true)
+                        .onErrorReturn(false)
+                        .<Void>flatMap(deleteSucceeded -> Mono.error(registrationError));
+                })
+                .then(keycloakClient.login(email, password));
+        });
+}
+```
+
+### Границы компенсации
+
+**Откат выполняется только до создания Keycloak user:**
+- ✅ Если Keycloak user creation fails → удаляем Person
+- ❌ Если password set fails → НЕ удаляем ни Person, ни Keycloak user
+- ❌ Если login fails → НЕ удаляем (пользователь может залогиниться позже)
+
+**Причина:** После создания Keycloak user начинается audit trail, который нельзя просто удалить.
+
+### Observability
+
+Все компенсирующие транзакции трассируются в **Grafana Tempo**:
+```
+registration (ERROR, 850ms)
+  ├─ create_person (OK, 120ms)
+  ├─ create_keycloak_user (ERROR, 200ms)
+  └─ rollback_person (OK, 80ms) ← compensating transaction
+```
+
+**Логи:**
+```json
+{
+  "level": "ERROR",
+  "message": "Registration failed for email: user@example.com",
+  "trace_id": "fb47b1deb3b6e4134167048b1ad49eda",
+  "compensating_transaction": "DELETE /v1/persons/{user_uid}",
+  "rollback_status": "SUCCESS"
+}
+```
+
+### Тестирование
+
+Компенсирующие транзакции покрыты unit-тестами:
+
+| Test | Scenario | Expected Result |
+|------|----------|----------------|
+| `register_keycloakCreateFails_deletesPersonAndPropagatesError` | Keycloak creation fails → DELETE succeeds | ✅ Person deleted, error propagated |
+| `register_keycloakCreateFails_deletePersonAlsoFails_stillPropagatesOriginalError` | Keycloak fails → DELETE also fails | ❌ CRITICAL log, original error propagated |
+
+**Покрытие:** `UserService` business logic ~80-85% (исключая auto-generated код)
+
+
+---
+
 
 
 
