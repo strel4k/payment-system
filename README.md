@@ -68,7 +68,7 @@
        ▼
 ┌─────────────────────────────────────────┐
 │      Observability Stack                │
-│  Prometheus │ Grafana │ Loki │ Tempo   │
+│  Prometheus │ Grafana │ Loki │ Tempo    │
 └─────────────────────────────────────────┘
 ```
 
