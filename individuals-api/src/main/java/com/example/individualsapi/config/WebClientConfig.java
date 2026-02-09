@@ -17,4 +17,14 @@ public class WebClientConfig {
                         .build())
                 .build();
     }
+
+    @Bean
+    public WebClient personServiceWebClient() {
+        return WebClient.builder()
+                .exchangeStrategies(ExchangeStrategies.builder()
+                        .codecs(cfg ->
+                                cfg.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                        .build())
+                .build();
+    }
 }

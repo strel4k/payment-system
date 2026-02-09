@@ -11,3 +11,21 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        enabled: true
+        datasourceUid: ""
+        tags:
+          - key: service.name
+            value: ""
+      tracesToMetrics:
+        enabled: true
+      serviceGeneratorEnabled: true
+      searchEnabled: true
+      nodeGraphEnabled: true
+      flamegraphEnabled: true

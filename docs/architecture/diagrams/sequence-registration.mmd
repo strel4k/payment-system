@@ -1,0 +1,114 @@
+sequenceDiagram
+    autonumber
+
+    actor User
+    participant API as Individuals API
+    participant PS as Person Service
+    participant DB as Person Database
+    participant KC as Keycloak
+    participant KDB as Keycloak Database
+    participant Tempo
+
+    Note over User,Tempo: Registration Flow with Distributed Tracing
+
+    User->>+API: POST /v1/auth/registration<br/>{email, password, firstName, lastName}
+
+    Note over API: Generate trace_id<br/>(OpenTelemetry)
+    API->>Tempo: Start span: registration
+
+    Note over API: Validate request:<br/>- email format<br/>- password strength<br/>- confirm_password match
+
+    API->>+PS: POST /v1/persons<br/>{firstName, lastName, email}<br/>header: traceparent
+
+    Note over PS: Start child span:<br/>create_person
+
+    PS->>PS: Generate user_uid (UUID)
+
+    PS->>+DB: BEGIN TRANSACTION
+
+    PS->>DB: INSERT INTO users<br/>(id=user_uid, email,<br/>first_name, last_name)
+    DB-->>PS: OK
+
+    PS->>DB: INSERT INTO individuals<br/>(user_id=user_uid,<br/>status=ACTIVE)
+    DB-->>PS: OK
+
+    PS->>DB: COMMIT
+    DB-->>-PS: Transaction committed
+
+    Note over PS: Envers audit:<br/>user_aud, individuals_aud<br/>tables updated
+
+    PS-->>-API: 201 Created<br/>{userId: user_uid,<br/>email, firstName, lastName}
+
+    Note over API: Person created successfully<br/>with user_uid
+
+    alt Keycloak user creation succeeds
+        API->>+KC: POST /admin/realms/individuals/users<br/>{username=email,<br/>email, firstName, lastName,<br/>enabled=true,<br/>attributes: {user_uid}}
+
+        KC->>+KDB: INSERT INTO user_entity<br/>(username, email, realm_id)
+        KDB-->>-KC: OK
+
+        KC->>KDB: INSERT INTO user_attribute<br/>(user_id, name="user_uid",<br/>value=user_uid)
+
+        KC-->>-API: 201 Created<br/>Location: .../users/{keycloak_id}
+
+        Note over API: Keycloak user created<br/>with user_uid attribute
+
+        API->>+KC: POST /admin/realms/individuals/users/{keycloak_id}/reset-password<br/>{value=password, temporary=false}
+        KC->>KDB: UPDATE credential<br/>SET password_hash
+        KC-->>-API: 204 No Content
+
+        Note over API: Password set successfully
+
+        API->>+KC: POST /realms/individuals/protocol/openid-connect/token<br/>{grant_type=password,<br/>username=email, password}
+
+        KC->>KDB: SELECT * FROM user_entity<br/>WHERE username=email
+        KDB-->>KC: User found
+
+        KC->>KC: Validate password hash
+
+        KC->>KC: Generate JWT tokens:<br/>- access_token (5 min)<br/>- refresh_token (30 min)
+
+        KC-->>-API: 200 OK<br/>{access_token,<br/>refresh_token,<br/>expires_in=300}
+
+        API->>Tempo: End span: registration<br/>(duration, status=OK)
+
+        API-->>User: 200 OK<br/>{access_token,<br/>refresh_token,<br/>expires_in, token_type}
+
+        Note over User: Registration complete!<br/>User receives JWT tokens
+
+    else Keycloak user creation fails
+        API->>+KC: POST /admin/realms/individuals/users
+        KC-->>-API: 409 Conflict / 500 Error
+
+        Note over API: ⚠️ Keycloak failed!<br/>COMPENSATING TRANSACTION
+
+        API->>+PS: DELETE /v1/persons/{user_uid}
+
+        Note over PS: Start child span:<br/>rollback_person
+
+        PS->>+DB: BEGIN TRANSACTION
+
+        PS->>DB: DELETE FROM individuals<br/>WHERE user_id=user_uid
+        DB-->>PS: OK
+
+        PS->>DB: DELETE FROM users<br/>WHERE id=user_uid
+        DB-->>PS: OK
+
+        PS->>DB: COMMIT
+        DB-->>-PS: Transaction committed
+
+        Note over PS: Envers audit:<br/>DEL records in _aud tables
+
+        PS-->>-API: 204 No Content
+
+        Note over API: ✅ Rollback successful<br/>Person deleted from DB
+
+        API->>Tempo: End span: registration<br/>(duration, status=ERROR)
+
+        API-->>User: 500 Internal Server Error<br/>{error: "Registration failed"}
+
+        Note over User: Registration failed!<br/>No orphaned data
+
+    end
+
+    deactivate API

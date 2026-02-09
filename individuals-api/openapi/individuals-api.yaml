@@ -126,6 +126,12 @@ components:
           type: string
         confirm_password:
           type: string
+        first_name:
+          type: string
+          maxLength: 32
+        last_name:
+          type: string
+          maxLength: 32
 
     UserLoginRequest:
       type: object

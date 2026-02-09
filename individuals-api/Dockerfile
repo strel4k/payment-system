@@ -1,22 +1,15 @@
-# --- Стадия сборки ---
-FROM gradle:8.10.2-jdk21-alpine AS build
-
-WORKDIR /workspace/app
-
-# копируем всё внутрь контейнера
+# --- build stage ---
+FROM gradle:8.14.3-jdk17-alpine AS build
+WORKDIR /workspace
 COPY . .
+RUN ./gradlew :individuals-api:bootJar --no-daemon -x test
 
-# собираем spring-boot jar
-RUN gradle bootJar --no-daemon
-
-# --- Стадия рантайма ---
-FROM eclipse-temurin:21-jre-alpine
-
+# --- runtime stage ---
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
-# копируем собранный jar
-COPY --from=build /workspace/app/build/libs/*.jar app.jar
+ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.10.0/opentelemetry-javaagent.jar /app/opentelemetry-javaagent.jar
 
+COPY --from=build /workspace/individuals-api/build/libs/*.jar app.jar
 EXPOSE 8081
-
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-javaagent:/app/opentelemetry-javaagent.jar", "-jar", "app.jar"]

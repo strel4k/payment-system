@@ -1,0 +1,161 @@
+openapi: 3.0.3
+info:
+  title: person-service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8082
+
+paths:
+  /v1/persons:
+    post:
+      operationId: createPerson
+      summary: Transactional create person (user + individual + address)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePersonRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonResponse'
+        '400':
+          description: Bad request
+
+  /v1/persons/{id}:
+    get:
+      operationId: getPersonById
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PersonResponse' }
+        '404':
+          description: Not found
+
+    put:
+      operationId: updatePerson
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdatePersonRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PersonResponse' }
+
+    delete:
+      operationId: deletePerson
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: No content
+
+  /v1/persons/by-email:
+    get:
+      operationId: getPersonByEmail
+      parameters:
+        - in: query
+          name: email
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PersonResponse' }
+        '404':
+          description: Not found
+
+components:
+  schemas:
+    CreatePersonRequest:
+      type: object
+      required: [email, firstName, lastName]
+      properties:
+        email: { type: string, format: email }
+        firstName: { type: string }
+        lastName: { type: string }
+        address:
+          $ref: '#/components/schemas/AddressRequest'
+        individual:
+          $ref: '#/components/schemas/IndividualRequest'
+
+    AddressRequest:
+      type: object
+      properties:
+        countryId: { type: integer, format: int32 }
+        address: { type: string }
+        zipCode: { type: string }
+        city: { type: string }
+        state: { type: string }
+
+    IndividualRequest:
+      type: object
+      properties:
+        passportNumber: { type: string }
+        phoneNumber: { type: string }
+
+    UpdatePersonRequest:
+      type: object
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        address:
+          $ref: '#/components/schemas/AddressRequest'
+        individual:
+          $ref: '#/components/schemas/IndividualRequest'
+
+    PersonResponse:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        firstName: { type: string }
+        lastName: { type: string }
+        address:
+          $ref: '#/components/schemas/AddressResponse'
+        individual:
+          $ref: '#/components/schemas/IndividualResponse'
+
+    AddressResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        countryId: { type: integer, format: int32 }
+        address: { type: string }
+        zipCode: { type: string }
+        city: { type: string }
+        state: { type: string }
+
+    IndividualResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        passportNumber: { type: string }
+        phoneNumber: { type: string }
+        status: { type: string }

@@ -2,12 +2,15 @@ package com.example.individualsapi.it;
 
 import com.example.dto.TokenResponse;
 import com.example.dto.UserInfoResponse;
+import com.example.dto.person.PersonResponse;
+import com.example.individualsapi.client.PersonServiceClient;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -18,8 +21,14 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 import org.testcontainers.containers.wait.strategy.Wait;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -27,7 +36,8 @@ import java.time.Duration;
 class AuthFlowIntegrationTest {
 
     @BeforeAll
-    static void disableHttpsRequirementForTestKeycloak() throws Exception {keycloak.execInContainer("sh", "-lc",
+    static void disableHttpsRequirementForTestKeycloak() throws Exception {
+        keycloak.execInContainer("sh", "-lc",
                 "/opt/keycloak/bin/kcadm.sh config credentials " +
                         "--server http://localhost:8080 " +
                         "--realm master " +
@@ -39,6 +49,9 @@ class AuthFlowIntegrationTest {
 
     @Autowired
     private WebTestClient webTestClient;
+
+    @MockBean
+    private PersonServiceClient personServiceClient;
 
     @Container
     static final GenericContainer<?> keycloak = new GenericContainer<>("quay.io/keycloak/keycloak:26.2")
@@ -53,9 +66,9 @@ class AuthFlowIntegrationTest {
             )
             .withCommand("start-dev", "--import-realm")
             .waitingFor(
-                    Wait.forHttp("/")
+                    Wait.forHttp("/realms/individuals")
                             .forPort(8080)
-                            .withStartupTimeout(Duration.ofMinutes(2))
+                            .withStartupTimeout(Duration.ofMinutes(5))
             );
 
     @DynamicPropertySource
@@ -73,9 +86,23 @@ class AuthFlowIntegrationTest {
                 () -> baseUrl + "/realms/individuals");
     }
 
+    // ------------ настраивает мок person-service перед каждым вызовом ------------
+
+    private void stubPersonService() {
+        when(personServiceClient.createPerson(any()))
+                .thenReturn(Mono.just(
+                        new PersonResponse()
+                                .userId(UUID.randomUUID())
+                                .email("stub@example.com")
+                ));
+    }
+
+    // ------------ 1. Registration → /me ------------
+
     @Test
-    @DisplayName("Registration -> Me: создаём пользователя в Keycloak и читаем /me по access_token")
+    @DisplayName("Registration -> Me: создаём пользователя и читаем /me по access_token")
     void registration_then_me_returns_user_info() {
+        stubPersonService();
 
         String email = "it-user-" + System.currentTimeMillis() + "@example.com";
         String password = "Qwe12345!";
@@ -99,9 +126,9 @@ class AuthFlowIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
-        org.junit.jupiter.api.Assertions.assertNotNull(regTokens);
-        org.junit.jupiter.api.Assertions.assertNotNull(regTokens.getAccessToken());
-        org.junit.jupiter.api.Assertions.assertFalse(regTokens.getAccessToken().isBlank());
+        assertNotNull(regTokens);
+        assertNotNull(regTokens.getAccessToken());
+        assertFalse(regTokens.getAccessToken().isBlank());
 
         UserInfoResponse me = webTestClient.get()
                 .uri("/v1/auth/me")
@@ -113,14 +140,17 @@ class AuthFlowIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
-        org.junit.jupiter.api.Assertions.assertNotNull(me);
-        org.junit.jupiter.api.Assertions.assertNotNull(me.getId());
-        org.junit.jupiter.api.Assertions.assertEquals(email, me.getEmail());
+        assertNotNull(me);
+        assertNotNull(me.getId());
+        assertEquals(email, me.getEmail());
     }
 
+    // ------------ 2. Registration → Login ------------
+
     @Test
-    @DisplayName("Login: после регистрации логинимся через password grant и получаем access_token")
+    @DisplayName("Login: после регистрации логинимся через password grant")
     void login_returns_tokens() {
+        stubPersonService();
 
         String email = "it-login-" + System.currentTimeMillis() + "@example.com";
         String password = "Qwe12345!";
@@ -158,8 +188,57 @@ class AuthFlowIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
-        org.junit.jupiter.api.Assertions.assertNotNull(loginTokens);
-        org.junit.jupiter.api.Assertions.assertNotNull(loginTokens.getAccessToken());
-        org.junit.jupiter.api.Assertions.assertFalse(loginTokens.getAccessToken().isBlank());
+        assertNotNull(loginTokens);
+        assertNotNull(loginTokens.getAccessToken());
+        assertFalse(loginTokens.getAccessToken().isBlank());
+    }
+
+    // ------------ 3. Duplicate registration → person-service conflict ------------
+
+    @Test
+    @DisplayName("Duplicate registration → person-service возвращает 409")
+    void duplicate_registration_returns_409() {
+        String email = "it-dup-" + System.currentTimeMillis() + "@example.com";
+        String password = "Qwe12345!";
+
+        // Первый вызов — успех
+        when(personServiceClient.createPerson(any()))
+                .thenReturn(Mono.just(
+                        new PersonResponse()
+                                .userId(UUID.randomUUID())
+                                .email(email)
+                ));
+
+        String json = """
+                {
+                  "email": "%s",
+                  "password": "%s",
+                  "confirm_password": "%s"
+                }
+                """.formatted(email, password, password);
+
+        // первая регистрация
+        webTestClient.post()
+                .uri("/v1/auth/registration")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(json)
+                .exchange()
+                .expectStatus().isCreated();
+
+        // Второй вызов — person-service видит дубликат по email
+        when(personServiceClient.createPerson(any()))
+                .thenReturn(Mono.error(
+                        new org.springframework.web.reactive.function.client.WebClientResponseException(
+                                409, "Conflict", null, null, null
+                        )
+                ));
+
+        // вторая регистрация — должна упасть на person-service
+        webTestClient.post()
+                .uri("/v1/auth/registration")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(json)
+                .exchange()
+                .expectStatus().is5xxServerError(); // individuals-api пробросит ошибку 500
     }
 }
