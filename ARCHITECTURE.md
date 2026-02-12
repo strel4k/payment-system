@@ -1,6 +1,6 @@
 # Architecture Overview — Payment System
 
-Архитектурная документация микросервисной системы управления пользователями.
+Архитектурная документация микросервисной платёжной системы.
 
 ---
 
@@ -8,33 +8,26 @@
 
 ### C4 Model Diagrams
 
-Диаграммы созданы по методологии [C4 Model](https://c4model.com) для визуализации архитектуры на разных уровнях абстракции.
-
 #### 1. Context Diagram (Уровень 1)
-**Файл**: [docs/architecture/diagrams/context-diagram.svg](docs/architecture/diagrams/context-diagram.svg)
+**Файл**: [docs/architecture/diagrams/context.puml](docs/architecture/diagrams/context.puml)
 
 Показывает общую картину системы и взаимодействие с внешними компонентами.
 
-![Context Diagram](./docs/architecture/diagrams/context-diagram.svg)
-
 **Ключевые компоненты**:
 - 👤 **User** — конечный пользователь
-- 🌐 **Individuals API** — оркестратор (аутентификация, регистрация)
-- 💾 **Person Service** — управление данными пользователей
+- 🌐 **Individuals API** — оркестратор (аутентификация, кошельки, транзакции)
+- 👤 **Person Service** — управление данными пользователей
+- 💳 **Transaction Service** — обработка платежей и транзакций
 - 🔐 **Keycloak** — OAuth2/JWT сервер
+- 📬 **Apache Kafka** — асинхронные события
 - 📊 **Observability Stack** — Prometheus, Grafana, Loki, Tempo
-- 📦 **Nexus OSS** — репозиторий Maven артефактов
-
-**Подробнее**: [docs/architecture/c4-context.md](docs/architecture/c4-context.md)
 
 ---
 
 #### 2. Container Diagram (Уровень 2)
-**Файл**: [docs/architecture/diagrams/container-diagram.svg](docs/architecture/diagrams/container-diagram.svg)
+**Файл**: [docs/architecture/diagrams/container.puml](docs/architecture/diagrams/container.puml)
 
 Детализация внутренних контейнеров, технологий и баз данных.
-
-![Container Diagram](docs/architecture/diagrams/container-diagram.svg)
 
 **Технологический стек**:
 
@@ -42,40 +35,72 @@
 |-----------|-----------|------|
 | **Individuals API** | Spring Boot WebFlux (Reactive) | 8081 |
 | **Person Service** | Spring Boot Web + JPA | 8082 |
+| **Transaction Service** | Spring Boot Web + JPA + Kafka | 8083 |
 | **Person DB** | PostgreSQL 16 | 5434 |
+| **Transaction DB** | PostgreSQL 16 | 5435 |
 | **Keycloak** | Keycloak 26.2 | 8080 |
 | **Keycloak DB** | PostgreSQL 17 | 5433 |
+| **Kafka** | Apache Kafka | 9092 |
+| **Zookeeper** | Apache Zookeeper | 2181 |
 | **Nexus OSS** | Nexus 3.75.1 | 8091 |
 | **Prometheus** | Prometheus | 9090 |
 | **Grafana** | Grafana 10.3 | 3000 |
 | **Loki** | Loki 2.9 | 3100 |
 | **Tempo** | Tempo 2.6 | 3200 |
 
-**Подробнее**: [docs/architecture/c4-container.md](docs/architecture/c4-container.md)
-
 ---
 
 ### Sequence Diagrams
 
 #### User Registration Flow
-**Файл**: [docs/architecture/diagrams/sequence-registration.svg](docs/architecture/diagrams/sequence-registration.svg)
+**Файл**: [docs/architecture/diagrams/sequence-registration.puml](docs/architecture/diagrams/sequence-registration.puml)
 
-Полная последовательность шагов при регистрации пользователя с distributed tracing.
-
-![Sequence Diagram](docs/architecture/diagrams/sequence-registration.svg)
+Полная последовательность при регистрации с distributed tracing и compensating transactions.
 
 **Основные шаги**:
 1. User → Individuals API: `POST /v1/auth/registration`
-2. API генерирует `trace_id` (OpenTelemetry)
-3. API → Person Service: создание Person (транзакционно)
-4. Person Service → PostgreSQL: `INSERT users`, `INSERT individuals`
-5. API → Keycloak: регистрация пользователя с `user_uid` attribute
-6. API → Keycloak: установка пароля
-7. API → Keycloak: генерация JWT токенов (access + refresh)
-8. API → Tempo: завершение span с полной трассой
-9. API → User: возврат JWT tokens
+2. API → Person Service: создание Person
+3. API → Keycloak: регистрация пользователя + пароль
+4. API → Keycloak: генерация JWT токенов
+5. При ошибке: compensating transaction (удаление Person)
 
-**Подробнее**: [docs/architecture/sequence-registration.md](docs/architecture/sequence-registration.md)
+---
+
+#### Deposit Flow (Asynchronous)
+**Файл**: [docs/architecture/diagrams/sequence-deposit.puml](docs/architecture/diagrams/sequence-deposit.puml)
+
+Двухфазное пополнение через Kafka.
+
+**Основные шаги**:
+1. `POST /transactions/deposit/init` → расчёт условий (TTL 15 мин)
+2. `POST /transactions/deposit/confirm` → создание PENDING транзакции
+3. Kafka: `deposit-requested` → Payment Gateway
+4. Kafka: `deposit-completed` → зачисление на баланс
+
+---
+
+#### Withdrawal Flow (Semi-synchronous)
+**Файл**: [docs/architecture/diagrams/sequence-withdrawal.puml](docs/architecture/diagrams/sequence-withdrawal.puml)
+
+Вывод средств с немедленным списанием и Kafka подтверждением.
+
+**Основные шаги**:
+1. `POST /transactions/withdrawal/init` → проверка баланса
+2. `POST /transactions/withdrawal/confirm` → списание, PENDING
+3. Kafka: `withdrawal-requested` → Payment Gateway
+4. Kafka: `withdrawal-completed` или `withdrawal-failed` (с refund)
+
+---
+
+#### Transfer Flow (Synchronous)
+**Файл**: [docs/architecture/diagrams/sequence-transfer.puml](docs/architecture/diagrams/sequence-transfer.puml)
+
+Атомарный перевод между кошельками.
+
+**Основные шаги**:
+1. `POST /transactions/transfer/init` → валидация обоих кошельков
+2. `POST /transactions/transfer/confirm` → atomic debit + credit
+3. Статус сразу COMPLETED (без Kafka)
 
 ---
 
@@ -84,294 +109,169 @@
 ### Микросервисная архитектура
 
 **Разделение ответственности**:
-- **individuals-api** — оркестратор, обрабатывает пользовательские запросы
-- **person-service** — data service, управляет персональными данными
+- **individuals-api** — оркестратор, единая точка входа
+- **person-service** — персональные данные пользователей
+- **transaction-service** — кошельки, транзакции, платежи
 - **Keycloak** — централизованная аутентификация
 
 **Преимущества**:
 - ✅ Независимое масштабирование сервисов
 - ✅ Изоляция отказов (failure isolation)
-- ✅ Разные технологические стеки (WebFlux vs Web)
+- ✅ Разные технологические стеки
 - ✅ Независимые циклы разработки
 
 ### Reactive vs Blocking
 
-**individuals-api (WebFlux)**:
-- Reactive, non-blocking I/O
-- Высокая пропускная способность
-- Подходит для I/O-intensive операций (HTTP calls к Person Service и Keycloak)
-
-**person-service (Web)**:
-- Blocking, традиционный Spring MVC
-- Проще в разработке и отладке
-- Достаточно для database-heavy операций
+| Сервис | Стек | Причина |
+|--------|------|---------|
+| **individuals-api** | WebFlux | I/O-intensive (HTTP calls) |
+| **person-service** | Spring MVC | Database-heavy, проще |
+| **transaction-service** | Spring MVC | Database + Kafka |
 
 ### Database per Service
 
-Каждый сервис имеет свою БД:
-- **person-service** → `person_db` (PostgreSQL)
-- **keycloak** → `keycloak_db` (PostgreSQL)
+| Сервис | БД | Порт |
+|--------|-----|------|
+| person-service | person_db | 5434 |
+| transaction-service | transaction_db | 5435 |
+| keycloak | keycloak_db | 5433 |
 
 **Преимущества**:
 - ✅ Независимое управление схемой
 - ✅ Изоляция данных
-- ✅ Возможность выбора разных СУБД
+- ✅ Возможность шардирования (transaction-service)
 
-### Distributed Tracing
+### Database Sharding (Optional)
 
-**OpenTelemetry Java Agent**:
-- Автоматическая инструментация HTTP calls
-- Минимальные изменения в коде
-- Trace ID в логах для корреляции
-
-**Tempo**:
-- Хранение и индексация traces
-- Интеграция с Grafana
-- Поиск по service name, trace ID, duration
-
-**Визуализация**:
-```
-User Request (trace_id: abc123)
-├─ individuals-api [POST /registration] (200ms)
-│  ├─ person-service [POST /persons] (80ms)
-│  │  └─ PostgreSQL [INSERT users] (20ms)
-│  ├─ keycloak [POST /users] (50ms)
-│  └─ keycloak [POST /token] (40ms)
+**Apache ShardingSphere JDBC** для transaction-service:
+- Шардирование по `user_uid`
+- 2 шарда (ds_0, ds_1)
+- Broadcast tables: `wallet_types`
+- Активация: `SPRING_PROFILES_ACTIVE=sharding`
+```yaml
+# shardingsphere-config.yaml
+rules:
+  - !SHARDING
+    tables:
+      transactions:
+        shardingColumn: user_uid
+        shardingAlgorithmName: user_uid_hash
 ```
 
-### Observability Stack
+---
 
-**Три столпа observability**:
+## 🔄 Transaction Flows
 
-1. **Metrics** (Prometheus + Grafana)
-    - JVM metrics (heap, threads, GC)
-    - HTTP metrics (request rate, latency, errors)
-    - Database connection pool metrics
-
-2. **Logs** (Loki + Promtail + Grafana)
-    - Structured JSON logging
-    - Correlation via trace_id
-    - Centralized aggregation
-
-3. **Traces** (Tempo + OpenTelemetry + Grafana)
-    - Distributed request tracing
-    - Service dependency mapping
-    - Performance bottleneck identification
-
-### Artifact Management
-
-**Nexus OSS**:
-- Maven repository для `person-service-client`
-- Автогенерированный клиент через OpenAPI
-- Централизованное управление зависимостями
-- Caching для ускорения сборки
-
-**Workflow**:
+### Two-Phase Pattern (init → confirm)
 ```
-1. OpenAPI spec (person-service.yml)
-2. openapi-generator → Java client
-3. Gradle publish → Nexus
-4. individuals-api → fetch from Nexus
+┌──────────────────────────────────────────────────────────┐
+│                    Init Phase                            │
+│  • Валидация входных данных                              │
+│  • Расчёт комиссии                                       │
+│  • Проверка баланса (withdrawal/transfer)                │
+│  • Генерация requestUid (TTL 15 мин)                     │
+│  • БД не изменяется!                                     │
+└──────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────┐
+│                   Confirm Phase                          │
+│  • Получение данных из кеша по requestUid                │
+│  • Создание транзакции в БД                              │
+│  • Изменение баланса (withdrawal/transfer)               │
+│  • Отправка в Kafka (deposit/withdrawal)                 │
+└──────────────────────────────────────────────────────────┘
 ```
 
-### Security
+### Fee Structure
 
-**OAuth2 + JWT**:
-- Centralized authentication (Keycloak)
-- Stateless JWT tokens (RS256)
-- Token rotation (refresh tokens)
-- Role-based access control (RBAC)
-
-**Data linking**:
-- Keycloak хранит `user_uid` как custom attribute
-- person-service использует `user_uid` как primary key
-- Связь через UUID, не через email
-
-### Database Audit
-
-**Hibernate Envers**:
-- Автоматическое отслеживание изменений
-- Таблицы `*_aud` для каждой entity
-- Полная история изменений (who, when, what)
-- Compliance-ready (GDPR, audit trails)
+| Operation | Fee | Debit from | Credit to |
+|-----------|-----|------------|-----------|
+| Deposit | 0% | — | wallet |
+| Withdrawal | 1% | wallet | external |
+| Transfer | 0.5% | source wallet | target wallet |
 
 ---
 
 ## 📐 Архитектурные паттерны
 
 ### 1. API Gateway Pattern
-**individuals-api** выступает как API Gateway:
-- Единая точка входа для клиентов
-- Роутинг к внутренним сервисам
-- Аутентификация и авторизация
+**individuals-api** как единая точка входа:
+- Роутинг к internal services
+- JWT валидация
+- Request/response transformation
 
 ### 2. Backend for Frontend (BFF)
-**individuals-api** адаптирует ответы:
-- Агрегация данных из Person Service и Keycloak
-- Трансформация DTO для клиентов
-- Упрощение клиентской логики
+Агрегация данных из нескольких сервисов:
+- Person Service + Keycloak → User Info
+- Transaction Service → Wallets, Transactions
 
-### 3. Database per Service
-Изолированные базы данных:
-- Независимое управление схемой
-- Избежание tight coupling
-- Возможность выбора разных СУБД
+### 3. Saga Pattern (Choreography)
 
-### 4. Saga Pattern (Choreography)
-Регистрация пользователя как распределённая транзакция:
-1. Create Person в person-service
-2. Create User в Keycloak
-3. Set Password в Keycloak
-4. Generate Tokens в Keycloak
+**Registration Saga**:
+```
+1. Create Person ──► OK
+2. Create Keycloak User ──► FAIL
+3. [Compensate] Delete Person ◄──
+```
 
-**Обработка ошибок**: компенсирующие транзакции при сбое на любом шаге.
+**Withdrawal Saga**:
+```
+1. Debit Balance ──► OK
+2. Process Payment ──► FAIL
+3. [Compensate] Refund Balance ◄──
+```
 
+### 4. Two-Phase Commit (Application Level)
+Init + Confirm разделение:
+- Atomicity через кеш с TTL
+- Idempotency через requestUid
 
 ---
 
-## 🔄 Data Flow
+## 🔒 Security
 
-### Registration Flow
-```
-┌──────┐                                                      
-│ User │                                                      
-└──┬───┘                                                      
-   │ 1. POST /v1/auth/registration                           
-   ▼                                                          
-┌─────────────────┐                                          
-│ Individuals API │                                          
-└────┬───┬───┬────┘                                          
-     │   │   │                                               
-     │   │   │ 2. POST /v1/persons                          
-     │   │   ▼                                               
-     │   │ ┌──────────────┐    3. INSERT                    
-     │   │ │Person Service├────────────► ┌──────────┐        
-     │   │ └──────────────┘              │Person DB │        
-     │   │                               └──────────┘        
-     │   │                                                    
-     │   │ 4. POST /admin/users                             
-     │   ▼                                                    
-     │ ┌─────────┐    5. INSERT                             
-     │ │Keycloak ├────────────► ┌──────────┐                 
-     │ └────┬────┘              │Keycloak  │                 
-     │      │                   │   DB     │                 
-     │      │ 6. /reset-password└──────────┘                 
-     │      │                                                 
-     │      │ 7. /token                                      
-     │      ▼                                                 
-     │   JWT tokens                                          
-     │                                                        
-     │ 8. trace → Tempo                                      
-     ▼                                                        
-  200 OK                                                      
-  {access_token, refresh_token}                              
-```
+### OAuth2 + JWT
+- **Keycloak** — centralized IdP
+- **RS256** — JWT signature
+- **user_uid** — custom attribute для связи с Person
+
+### API Security
+- Все endpoints требуют JWT
+- User может видеть только свои wallets/transactions
+- Pessimistic locking для balance updates
 
 ---
 
-## Error Handling & Compensating Transactions
+## 📊 Observability
 
-### Проблема распределённых транзакций
+### Three Pillars
 
-В микросервисной архитектуре невозможно использовать классические ACID транзакции между сервисами:
-- **Person Service** имеет свою PostgreSQL БД
-- **Keycloak** имеет свою PostgreSQL БД
-- Нет distributed transaction coordinator (2PC не используется)
+| Pillar | Stack | Purpose |
+|--------|-------|---------|
+| **Metrics** | Prometheus + Grafana | JVM, HTTP, DB metrics |
+| **Logs** | Loki + Promtail | Centralized JSON logs |
+| **Traces** | Tempo + OpenTelemetry | Distributed tracing |
 
-### Решение: Compensating Transactions (Saga Pattern)
-
-При ошибке на одном из шагов выполняется **компенсирующая транзакция** для отката изменений.
-
-**Визуализация:** См. [Sequence Diagram: Registration Flow](./docs/architecture/sequence-registration.md#error-path-компенсирующая-транзакция)
-
-#### Пример: User Registration Flow
-
-**Happy Path:**
-1. ✅ Создать Person в `person-service`
-2. ✅ Создать User в Keycloak
-3. ✅ Установить пароль
-4. ✅ Получить JWT токены
-
-**Error Path (Keycloak fails):**
-1. ✅ Создать Person в `person-service`
-2. ❌ Создать User в Keycloak → **409 Conflict**
-3. 🔄 **ROLLBACK**: Удалить Person из БД через `DELETE /v1/persons/{id}`
-4. ❌ Вернуть ошибку пользователю
-
-### Реализация в коде
-```java
-// UserService.java
-public Mono<TokenResponse> register(UserRegistrationRequest request) {
-    return personServiceClient.createPerson(request)
-        .flatMap(personResponse -> {
-            String userId = personResponse.getUserId().toString();
-            
-            return keycloakClient.createUserWithAttribute(email, password, userId)
-                .onErrorResume(keycloakError -> {
-                    // Компенсирующая транзакция
-                    RuntimeException registrationError = new RuntimeException(
-                        "Registration failed: " + keycloakError.getMessage(),
-                        keycloakError  // Сохраняем оригинальную ошибку
-                    );
-                    
-                    return personServiceClient.deletePerson(personResponse.getUserId())
-                        .doOnSuccess(v -> log.info("✅ Rollback successful"))
-                        .doOnError(deleteError -> 
-                            log.error("🚨 CRITICAL: Rollback failed! Manual cleanup required")
-                        )
-                        .thenReturn(true)
-                        .onErrorReturn(false)
-                        .<Void>flatMap(deleteSucceeded -> Mono.error(registrationError));
-                })
-                .then(keycloakClient.login(email, password));
-        });
-}
-```
-
-### Границы компенсации
-
-**Откат выполняется только до создания Keycloak user:**
-- ✅ Если Keycloak user creation fails → удаляем Person
-- ❌ Если password set fails → НЕ удаляем ни Person, ни Keycloak user
-- ❌ Если login fails → НЕ удаляем (пользователь может залогиниться позже)
-
-**Причина:** После создания Keycloak user начинается audit trail, который нельзя просто удалить.
-
-### Observability
-
-Все компенсирующие транзакции трассируются в **Grafana Tempo**:
-```
-registration (ERROR, 850ms)
-  ├─ create_person (OK, 120ms)
-  ├─ create_keycloak_user (ERROR, 200ms)
-  └─ rollback_person (OK, 80ms) ← compensating transaction
-```
-
-**Логи:**
+### Correlation
 ```json
 {
-  "level": "ERROR",
-  "message": "Registration failed for email: user@example.com",
-  "trace_id": "fb47b1deb3b6e4134167048b1ad49eda",
-  "compensating_transaction": "DELETE /v1/persons/{user_uid}",
-  "rollback_status": "SUCCESS"
+  "level": "INFO",
+  "message": "Deposit completed",
+  "trace_id": "abc123",
+  "span_id": "def456",
+  "transaction_uid": "..."
 }
 ```
 
-### Тестирование
-
-Компенсирующие транзакции покрыты unit-тестами:
-
-| Test | Scenario | Expected Result |
-|------|----------|----------------|
-| `register_keycloakCreateFails_deletesPersonAndPropagatesError` | Keycloak creation fails → DELETE succeeds | ✅ Person deleted, error propagated |
-| `register_keycloakCreateFails_deletePersonAlsoFails_stillPropagatesOriginalError` | Keycloak fails → DELETE also fails | ❌ CRITICAL log, original error propagated |
-
-**Покрытие:** `UserService` business logic ~80-85% (исключая auto-generated код)
-
-
 ---
 
+## 🧪 Testing Strategy
 
+| Layer | Tools | Coverage |
+|-------|-------|----------|
+| Unit | JUnit 5, Mockito | Services, Utils |
+| Integration | TestContainers, H2 | Repositories, Controllers |
+| E2E | Docker Compose | Full flow (manual) |
 
-
+**Total**: 100 tests, 80%+ business logic coverage

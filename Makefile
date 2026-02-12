@@ -1,5 +1,6 @@
 DOCKER_COMPOSE = docker compose
 
+# Infrastructure URLs
 GRAFANA_URL     = http://localhost:3000/api/health
 LOKI_URL        = http://localhost:3100/ready
 LOKI_QUERY_URL  = http://localhost:3100/loki/api/v1/query_range
@@ -8,14 +9,20 @@ KEYCLOAK_URL    = http://localhost:8080/health/ready
 NEXUS_URL       = http://localhost:8091/service/rest/v1/status
 TEMPO_URL       = http://localhost:3200/status
 
-INDIVIDUALS_API_URL = http://localhost:8081/actuator/health
-PERSON_SERVICE_URL  = http://localhost:8082/actuator/health
+# Application URLs
+INDIVIDUALS_API_URL     = http://localhost:8081/actuator/health
+PERSON_SERVICE_URL      = http://localhost:8082/actuator/health
+TRANSACTION_SERVICE_URL = http://localhost:8083/actuator/health
 
+# Infrastructure services (without Kafka for basic infra)
 INFRA_SERVICES ?= person-postgres keycloak-postgres individuals-keycloak nexus loki prometheus grafana promtail tempo
 
-.PHONY: all up start stop clean logs rebuild infra infra-logs infra-stop health loki-test test test-coverage nexus-publish nexus-password
+# Full infrastructure including Kafka
+INFRA_FULL ?= $(INFRA_SERVICES) zookeeper kafka transaction-postgres
 
-all: infra start health
+.PHONY: all up start stop clean logs rebuild infra infra-full infra-logs infra-stop health loki-test test test-coverage nexus-publish nexus-password kafka-topics kafka-ui
+
+all: infra-full start health
 
 ifeq ($(OS),Windows_NT)
 WAIT_HTTP = powershell -Command "while ($$true) { \
@@ -49,6 +56,8 @@ wait:
 	@$(call WAIT_HTTP,$(PERSON_SERVICE_URL))
 	@echo "Waiting for Individuals API..."
 	@$(call WAIT_HTTP,$(INDIVIDUALS_API_URL))
+	@echo "Waiting for Transaction Service..."
+	@$(call WAIT_HTTP,$(TRANSACTION_SERVICE_URL))
 
 stop:
 	$(DOCKER_COMPOSE) down
@@ -60,6 +69,7 @@ clean: stop
 logs:
 	$(DOCKER_COMPOSE) logs -f --tail=200
 
+# Basic infrastructure (without Kafka)
 infra:
 	@echo "Starting infrastructure services: $(INFRA_SERVICES)"
 	$(DOCKER_COMPOSE) up -d $(INFRA_SERVICES)
@@ -77,11 +87,33 @@ infra:
 	@$(call WAIT_HTTP,$(TEMPO_URL))
 	@echo "Infrastructure is ready."
 
+# Full infrastructure with Kafka
+infra-full:
+	@echo "Starting full infrastructure: $(INFRA_FULL)"
+	$(DOCKER_COMPOSE) up -d $(INFRA_FULL)
+	@echo "Waiting for Zookeeper..."
+	@sleep 5
+	@echo "Waiting for Kafka..."
+	@sleep 10
+	@echo "Waiting for Loki..."
+	@$(call WAIT_HTTP,$(LOKI_URL))
+	@echo "Waiting for Prometheus..."
+	@$(call WAIT_HTTP,$(PROM_URL))
+	@echo "Waiting for Grafana..."
+	@$(call WAIT_HTTP,$(GRAFANA_URL))
+	@echo "Waiting for Keycloak..."
+	@$(call WAIT_HTTP,$(KEYCLOAK_URL))
+	@echo "Waiting for Nexus..."
+	@$(call WAIT_HTTP,$(NEXUS_URL))
+	@echo "Waiting for Tempo..."
+	@$(call WAIT_HTTP,$(TEMPO_URL))
+	@echo "Full infrastructure is ready (including Kafka)."
+
 infra-logs:
-	$(DOCKER_COMPOSE) logs -f --tail=200 $(INFRA_SERVICES)
+	$(DOCKER_COMPOSE) logs -f --tail=200 $(INFRA_FULL)
 
 infra-stop:
-	$(DOCKER_COMPOSE) stop $(INFRA_SERVICES)
+	$(DOCKER_COMPOSE) stop $(INFRA_FULL)
 
 health:
 	@echo "=== Infrastructure Health ==="
@@ -92,9 +124,13 @@ health:
 	@echo "Nexus:"; curl -sS $(NEXUS_URL) | jq
 	@echo "Keycloak:"; curl -sS $(KEYCLOAK_URL) | jq
 	@echo ""
+	@echo "=== Kafka Health ==="
+	@docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092 2>/dev/null | head -1 || echo "Kafka not running"
+	@echo ""
 	@echo "=== Application Services ==="
 	@echo "Person Service:"; curl -sS $(PERSON_SERVICE_URL) | jq
 	@echo "Individuals API:"; curl -sS $(INDIVIDUALS_API_URL) | jq
+	@echo "Transaction Service:"; curl -sS $(TRANSACTION_SERVICE_URL) | jq
 	@echo ""
 	@echo "=== Prometheus Targets ==="
 	@curl -sS http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | {job:.labels.job, health:.health, lastError:.lastError}'
@@ -110,19 +146,57 @@ loki-test:
 	  --data-urlencode "start=$$(date -u -v-5M +%s)000000000" \
 	| jq '.data.result | length'
 
+# Kafka management
+kafka-topics:
+	@echo "=== Kafka Topics ==="
+	@docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+
+kafka-describe:
+	@echo "=== Kafka Topic Details ==="
+	@docker exec kafka kafka-topics --bootstrap-server localhost:9092 --describe
+
+kafka-consumer-groups:
+	@echo "=== Kafka Consumer Groups ==="
+	@docker exec kafka kafka-consumer-groups --bootstrap-server localhost:9092 --list
+	@echo ""
+	@echo "=== Transaction Service Consumer Group ==="
+	@docker exec kafka kafka-consumer-groups --bootstrap-server localhost:9092 --group transaction-service --describe
+
+# Testing
 test:
+	@echo "Running all tests..."
+	./gradlew test
+	@echo ""
+	@echo "=== Test Summary ==="
+	@echo "person-service:      $$(find person-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "individuals-api:     $$(find individuals-api/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "transaction-service: $$(find transaction-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+
+test-unit:
+	@echo "Running unit tests only..."
+	./gradlew test --tests '*Test' --exclude-tags integration
+
+test-person:
 	@echo "Running person-service tests..."
-	cd person-service && ./gradlew test
+	./gradlew :person-service:test
+
+test-individuals:
 	@echo "Running individuals-api tests..."
-	cd individuals-api && ./gradlew test
+	./gradlew :individuals-api:test
+
+test-transaction:
+	@echo "Running transaction-service tests..."
+	./gradlew :transaction-service:test
 
 test-coverage:
 	@echo "Generating coverage reports..."
 	./gradlew jacocoTestReport
 	@echo "Coverage reports generated:"
-	@echo "  person-service:   person-service/build/reports/jacoco/test/html/index.html"
-	@echo "  individuals-api:  individuals-api/build/reports/jacoco/test/html/index.html"
+	@echo "  person-service:      person-service/build/reports/jacoco/test/html/index.html"
+	@echo "  individuals-api:     individuals-api/build/reports/jacoco/test/html/index.html"
+	@echo "  transaction-service: transaction-service/build/reports/jacoco/test/html/index.html"
 
+# Nexus
 nexus-publish:
 	@echo "Publishing person-service-client to Nexus..."
 	./gradlew :common:publish -PnexusUsername=admin -PnexusPassword=admin123
@@ -132,5 +206,15 @@ nexus-publish:
 nexus-password:
 	@echo "Nexus admin password:"
 	@docker exec nexus cat /nexus-data/admin.password
+
+# Database
+db-transaction:
+	@docker exec -it transaction-postgres psql -U postgres -d transaction
+
+db-person:
+	@docker exec -it person-postgres psql -U postgres -d person
+
+db-keycloak:
+	@docker exec -it keycloak-postgres psql -U postgres -d keycloak
 
 rebuild: clean all

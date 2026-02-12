@@ -1,0 +1,43 @@
+@startuml Payment System - C4 Context Diagram
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+
+title System Context Diagram for Payment System
+
+Person(customer, "Customer", "Individual user who manages their wallet and makes payments")
+
+System_Boundary(payment_system, "Payment System") {
+    System(individuals_api, "Individuals API", "Handles user registration, authentication, and wallet operations")
+    System(person_service, "Person Service", "Manages personal data and user profiles")
+    System(transaction_service, "Transaction Service", "Processes payments and transactions")
+}
+
+System_Ext(keycloak, "Keycloak", "Identity and Access Management")
+System_Ext(kafka, "Apache Kafka", "Message broker for async events")
+System_Ext(tempo, "Grafana Tempo", "Distributed tracing backend")
+System_Ext(prometheus, "Prometheus", "Metrics collection")
+System_Ext(grafana, "Grafana", "Observability dashboards")
+
+Rel(customer, individuals_api, "Uses", "HTTPS/REST")
+Rel(individuals_api, person_service, "Queries user data", "HTTPS/REST")
+Rel(individuals_api, transaction_service, "Initiates payments", "HTTPS/REST")
+Rel(individuals_api, keycloak, "Authenticates users", "HTTPS/Admin API")
+
+Rel(transaction_service, kafka, "Publishes events", "Kafka Protocol")
+Rel(person_service, kafka, "Consumes events", "Kafka Protocol")
+
+Rel(individuals_api, tempo, "Sends traces", "OTLP/gRPC")
+Rel(person_service, tempo, "Sends traces", "OTLP/gRPC")
+Rel(transaction_service, tempo, "Sends traces", "OTLP/gRPC")
+
+Rel(individuals_api, prometheus, "Exposes metrics", "HTTP/Prometheus")
+Rel(person_service, prometheus, "Exposes metrics", "HTTP/Prometheus")
+Rel(transaction_service, prometheus, "Exposes metrics", "HTTP/Prometheus")
+
+Rel(customer, grafana, "Views dashboards", "HTTPS")
+Rel(grafana, tempo, "Queries traces", "HTTP")
+Rel(grafana, prometheus, "Queries metrics", "HTTP")
+
+@enduml

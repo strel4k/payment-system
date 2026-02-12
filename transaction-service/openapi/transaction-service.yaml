@@ -1,0 +1,487 @@
+openapi: 3.0.3
+info:
+  title: Transaction Service API
+  description: |
+    Микросервис для обработки кошельков и транзакций в платёжной системе.
+    
+    Поддерживаемые операции:
+    - **Deposit** — пополнение с асинхронной финализацией через Kafka
+    - **Transfer** — перевод между кошельками, синхронный
+    - **Withdrawal** — вывод средств с подтверждением через Kafka
+  version: 1.0.0
+  contact:
+    name: Payment System Team
+
+servers:
+  - url: http://localhost:8083/api/v1
+    description: Local development server
+
+tags:
+  - name: Wallets
+    description: Управление кошельками пользователей
+  - name: Transactions
+    description: Операции с транзакциями (init/confirm/status)
+
+paths:
+  # ==================== WALLETS ====================
+  /wallets:
+    post:
+      tags:
+        - Wallets
+      summary: Создание кошелька пользователя
+      operationId: createWallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWalletRequest'
+      responses:
+        '201':
+          description: Кошелёк успешно создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '400':
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /wallets/{walletUid}:
+    get:
+      tags:
+        - Wallets
+      summary: Получение информации о кошельке
+      operationId: getWallet
+      parameters:
+        - name: walletUid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Данные кошелька
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '404':
+          description: Кошелёк не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /wallets/user/{userUid}:
+    get:
+      tags:
+        - Wallets
+      summary: Получение всех кошельков пользователя
+      operationId: getWalletsByUser
+      parameters:
+        - name: userUid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список кошельков пользователя
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WalletResponse'
+
+  # ==================== TRANSACTIONS ====================
+  /transactions/{type}/init:
+    post:
+      tags:
+        - Transactions
+      summary: Инициализация транзакции (без создания записи в БД)
+      description: |
+        Рассчитывает условия операции (комиссия, доступность, итоговая сумма).
+        Никакая запись в БД не создаётся на этом этапе.
+      operationId: initTransaction
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [deposit, withdrawal, transfer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionInitRequest'
+      responses:
+        '200':
+          description: Условия транзакции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionInitResponse'
+        '400':
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /transactions/{type}/confirm:
+    post:
+      tags:
+        - Transactions
+      summary: Подтверждение и запуск транзакции
+      description: |
+        Создаёт транзакцию в БД и запускает её выполнение.
+        - Deposit/Withdrawal: статус PENDING, отправка в Kafka
+        - Transfer: синхронное выполнение, статус COMPLETED
+      operationId: confirmTransaction
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [deposit, withdrawal, transfer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionConfirmRequest'
+      responses:
+        '200':
+          description: Транзакция подтверждена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionConfirmResponse'
+        '400':
+          description: Ошибка подтверждения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /transactions/{transactionUid}/status:
+    get:
+      tags:
+        - Transactions
+      summary: Получение статуса транзакции
+      operationId: getTransactionStatus
+      parameters:
+        - name: transactionUid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Статус и детали транзакции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionStatusResponse'
+        '404':
+          description: Транзакция не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /transactions:
+    get:
+      tags:
+        - Transactions
+      summary: Поиск транзакций по фильтрам с пагинацией
+      operationId: searchTransactions
+      parameters:
+        - name: userUid
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: walletUid
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [deposit, withdrawal, transfer]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, COMPLETED, FAILED]
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Список транзакций
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionPageResponse'
+
+components:
+  schemas:
+    # ==================== WALLET SCHEMAS ====================
+    CreateWalletRequest:
+      type: object
+      required:
+        - userUid
+        - walletTypeUid
+        - name
+      properties:
+        userUid:
+          type: string
+          format: uuid
+          description: UUID пользователя
+        walletTypeUid:
+          type: string
+          format: uuid
+          description: UUID типа кошелька
+        name:
+          type: string
+          maxLength: 32
+          description: Название кошелька
+
+    WalletResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+          format: uuid
+        userUid:
+          type: string
+          format: uuid
+        walletTypeUid:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, BLOCKED, CLOSED]
+        balance:
+          type: number
+          format: decimal
+        currencyCode:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        modifiedAt:
+          type: string
+          format: date-time
+
+    # ==================== TRANSACTION SCHEMAS ====================
+    TransactionInitRequest:
+      type: object
+      required:
+        - walletUid
+        - amount
+      properties:
+        walletUid:
+          type: string
+          format: uuid
+          description: UUID кошелька-источника
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Сумма операции
+        targetWalletUid:
+          type: string
+          format: uuid
+          description: UUID кошелька-получателя (только для transfer)
+        paymentMethodId:
+          type: integer
+          format: int64
+          description: ID платёжного метода (для deposit/withdrawal)
+
+    TransactionInitResponse:
+      type: object
+      properties:
+        requestUid:
+          type: string
+          format: uuid
+          description: Уникальный ID запроса для confirm
+        walletUid:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: decimal
+        fee:
+          type: number
+          format: decimal
+          description: Комиссия
+        totalAmount:
+          type: number
+          format: decimal
+          description: Итоговая сумма (amount + fee или amount - fee)
+        currencyCode:
+          type: string
+        available:
+          type: boolean
+          description: Доступна ли операция
+        message:
+          type: string
+          description: Сообщение (причина недоступности и т.д.)
+        expiresAt:
+          type: string
+          format: date-time
+          description: Время жизни init-запроса
+
+    TransactionConfirmRequest:
+      type: object
+      required:
+        - requestUid
+        - walletUid
+        - amount
+      properties:
+        requestUid:
+          type: string
+          format: uuid
+          description: ID из init response
+        walletUid:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: decimal
+        targetWalletUid:
+          type: string
+          format: uuid
+          description: Только для transfer
+        paymentMethodId:
+          type: integer
+          format: int64
+          description: Для deposit/withdrawal
+
+    TransactionConfirmResponse:
+      type: object
+      properties:
+        transactionUid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED]
+        type:
+          type: string
+          enum: [DEPOSIT, WITHDRAWAL, TRANSFER]
+        amount:
+          type: number
+          format: decimal
+        fee:
+          type: number
+          format: decimal
+        createdAt:
+          type: string
+          format: date-time
+
+    TransactionStatusResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+          format: uuid
+        userUid:
+          type: string
+          format: uuid
+        walletUid:
+          type: string
+          format: uuid
+        targetWalletUid:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [DEPOSIT, WITHDRAWAL, TRANSFER]
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED]
+        amount:
+          type: number
+          format: decimal
+        fee:
+          type: number
+          format: decimal
+        currencyCode:
+          type: string
+        failureReason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        modifiedAt:
+          type: string
+          format: date-time
+
+    TransactionPageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionStatusResponse'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+
+    # ==================== ERROR SCHEMA ====================
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+        path:
+          type: string

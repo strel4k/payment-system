@@ -1,0 +1,69 @@
+@startuml Payment System - C4 Container Diagram
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Container Diagram for Payment System
+
+Person(customer, "Customer", "Individual user")
+
+System_Boundary(payment_system, "Payment System") {
+
+    Container(individuals_api, "Individuals API", "Spring Boot, Java 17", "User registration, authentication, wallet operations")
+    Container(person_service, "Person Service", "Spring Boot, Java 17", "Personal data management, user profiles")
+    Container(transaction_service, "Transaction Service", "Spring Boot, Java 17", "Payment processing, transaction history")
+
+    ContainerDb(individuals_db, "Individuals Database", "PostgreSQL 15", "Stores wallet data")
+    ContainerDb(person_db, "Person Database", "PostgreSQL 15", "Stores user profiles, personal information")
+    ContainerDb(transaction_db, "Transaction Database", "PostgreSQL 15", "Stores transactions, payment history")
+}
+
+System_Ext(keycloak, "Keycloak", "Identity and Access Management")
+ContainerDb_Ext(keycloak_db, "Keycloak Database", "PostgreSQL 15", "Stores users, roles, sessions")
+
+System_Ext(kafka, "Apache Kafka", "Message broker")
+System_Ext(tempo, "Grafana Tempo", "Distributed tracing")
+System_Ext(prometheus, "Prometheus", "Metrics collection")
+System_Ext(grafana, "Grafana", "Dashboards")
+
+' User interactions
+Rel(customer, individuals_api, "Uses", "HTTPS/REST, JSON")
+
+' API Gateway pattern
+Rel(individuals_api, person_service, "Queries user data", "HTTPS/REST, JSON")
+Rel(individuals_api, transaction_service, "Initiates payments", "HTTPS/REST, JSON")
+
+' Authentication
+Rel(individuals_api, keycloak, "Authenticates", "HTTPS/Admin API + Token endpoint")
+Rel(keycloak, keycloak_db, "Reads/Writes", "JDBC")
+
+' Database connections
+Rel(individuals_api, individuals_db, "Reads/Writes", "JDBC, R2DBC")
+Rel(person_service, person_db, "Reads/Writes", "JDBC")
+Rel(transaction_service, transaction_db, "Reads/Writes", "JDBC")
+
+' Event-driven communication
+Rel(transaction_service, kafka, "Publishes", "deposit_completed,\nwithdrawal_completed,\ntransfer_completed")
+Rel(person_service, kafka, "Consumes", "user_events")
+Rel(individuals_api, kafka, "Consumes", "deposit_completed")
+
+' Observability
+Rel(individuals_api, tempo, "Sends traces", "OTLP/gRPC")
+Rel(person_service, tempo, "Sends traces", "OTLP/gRPC")
+Rel(transaction_service, tempo, "Sends traces", "OTLP/gRPC")
+
+Rel(individuals_api, prometheus, "/actuator/prometheus", "HTTP")
+Rel(person_service, prometheus, "/actuator/prometheus", "HTTP")
+Rel(transaction_service, prometheus, "/actuator/prometheus", "HTTP")
+
+Rel(grafana, tempo, "Queries traces", "HTTP")
+Rel(grafana, prometheus, "Queries metrics", "PromQL")
+Rel(customer, grafana, "Views dashboards", "HTTPS")
+
+' Layout hints
+Lay_D(customer, individuals_api)
+Lay_R(individuals_api, person_service)
+Lay_R(person_service, transaction_service)
+
+@enduml

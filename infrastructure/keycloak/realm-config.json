@@ -1,19 +1,64 @@
 {
   "realm": "individuals",
   "enabled": true,
-  "sslRequired": "none",
-  "registrationAllowed": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "refreshTokenMaxReuse": 0,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
   "clients": [
     {
       "clientId": "individuals-client",
-      "protocol": "openid-connect",
-      "publicClient": false,
+      "name": "Individuals API Client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
       "secret": "secret",
-      "standardFlowEnabled": true,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "publicClient": false,
+      "protocol": "openid-connect",
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true,
-      "redirectUris": ["*"],
-      "webOrigins": ["*"]
+      "authorizationServicesEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "attributes": {
+        "access.token.lifespan": "300"
+      },
+      "protocolMappers": [
+        {
+          "name": "user_uid",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "user_uid",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "user_uid",
+            "jsonType.label": "String"
+          }
+        }
+      ]
     }
-  ]
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "user",
+        "description": "Regular user role"
+      },
+      {
+        "name": "admin",
+        "description": "Administrator role"
+      }
+    ]
+  },
+  "defaultRoles": ["user"]
 }

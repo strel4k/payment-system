@@ -6,21 +6,24 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.0-green)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
-Полнофункциональная микросервисная система управления пользователями с **distributed tracing**, **observability stack**, и **artifact management**.
+Полнофункциональная микросервисная платёжная система с **wallet management**, **transaction processing**, **event-driven architecture**, **distributed tracing** и **observability stack**.
 
 ---
 
 ## 🎯 Возможности
 
-- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service (data service)
+- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service
+- ✅ **Wallet Management** — создание и управление кошельками пользователей
+- ✅ **Transaction Processing** — deposit, withdrawal, transfer с двухфазным подтверждением
+- ✅ **Event-Driven Architecture** — Apache Kafka для асинхронных операций
 - ✅ **OAuth2/JWT аутентификация** — интеграция с Keycloak
 - ✅ **Distributed Tracing** — OpenTelemetry + Tempo
 - ✅ **Full Observability** — Prometheus (метрики) + Loki (логи) + Grafana (визуализация)
 - ✅ **Artifact Management** — Nexus OSS для Maven артефактов
 - ✅ **Database Audit** — Hibernate Envers для отслеживания изменений
-- ✅ **OpenAPI Specification** — автогенерация моделей и клиентов
-- ✅ **Comprehensive Testing** — 64 unit + integration теста, 80%+ покрытие бизнес-логики
-- ✅ **Production Ready** — Docker Compose для быстрого деплоя
+- ✅ **OpenAPI Specification** — автогенерация DTO из YAML
+- ✅ **Database Sharding** — Apache ShardingSphere JDBC (optional profile)
+- ✅ **Comprehensive Testing** — 100 unit & integration тестов, 80%+ покрытие
 
 ---
 
@@ -29,50 +32,67 @@
 | Документ | Описание |
 |----------|----------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Архитектурные диаграммы (C4, Sequence) |
+| [transaction-service/README.md](transaction-service/README.md) | Transaction Service API и архитектура |
 | [docs/TEST_COVERAGE_REPORT.md](docs/TEST_COVERAGE_REPORT.md) | Отчёт о покрытии тестами |
+
+### Диаграммы
+
+| Диаграмма | Описание |
+|-----------|----------|
+| [docs/architecture/diagrams/context.puml](docs/architecture/diagrams/context.puml) | C4 Context Diagram |
+| [docs/architecture/diagrams/container.puml](docs/architecture/diagrams/container.puml) | C4 Container Diagram |
+| [docs/architecture/diagrams/sequence-registration.puml](docs/architecture/diagrams/sequence-registration.puml) | User Registration Flow |
+| [docs/architecture/diagrams/sequence-deposit.puml](docs/architecture/diagrams/sequence-deposit.puml) | Deposit Flow (async Kafka) |
+| [docs/architecture/diagrams/sequence-withdrawal.puml](docs/architecture/diagrams/sequence-withdrawal.puml) | Withdrawal Flow (semi-sync) |
+| [docs/architecture/diagrams/sequence-transfer.puml](docs/architecture/diagrams/sequence-transfer.puml) | Transfer Flow (sync atomic) |
 
 ---
 
 ## 🏗️ Архитектура
 
 ```
-┌─────────────┐
-│    User     │
-└──────┬──────┘
-       │ HTTPS/REST
-       ▼
-┌─────────────────────────────────────────┐
-│         Individuals API                 │
-│   (Orchestrator, WebFlux, Port 8081)    │
-│  ┌───────────────────────────────────┐  │
-│  │ • Authentication & Registration   │  │
-│  │ • JWT Token Management            │  │
-│  │ • Person Service Integration      │  │
-│  └───────────────────────────────────┘  │
-└────┬─────────────┬──────────────────┬───┘
-     │             │                  │
-     ▼             ▼                  ▼
-┌──────────┐  ┌──────────┐    ┌──────────┐
-│ Person   │  │ Keycloak │    │  Nexus   │
-│ Service  │  │ (OAuth2) │    │   OSS    │
-│ (8082)   │  │  (8080)  │    │  (8091)  │
-└────┬─────┘  └────┬─────┘    └──────────┘
-     │             │
-     ▼             ▼
-┌──────────┐  ┌──────────┐
-│ Person   │  │ Keycloak │
-│   DB     │  │    DB    │
-│(Postgres)│  │(Postgres)│
-└──────────┘  └──────────┘
-       │
-       ▼
-┌─────────────────────────────────────────┐
-│      Observability Stack                │
-│  Prometheus │ Grafana │ Loki │ Tempo    │
-└─────────────────────────────────────────┘
+                       ┌─────────────┐
+                       │    User     │
+                       └──────┬──────┘
+                              │ HTTPS/REST
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Individuals API                          │
+│              (Orchestrator, WebFlux, Port 8081)             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ • Authentication & Registration                      │   │
+│  │ • JWT Token Management                               │   │
+│  │ • Proxy to Person Service & Transaction Service      │   │
+│  └──────────────────────────────────────────────────────┘   │
+└────┬──────────────────┬──────────────────┬──────────────────┘
+     │                  │                  │
+     ▼                  ▼                  ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│   Person     │  │ Transaction  │  │   Keycloak   │
+│   Service    │  │   Service    │  │   (OAuth2)   │
+│   (8082)     │  │   (8083)     │  │   (8080)     │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                 │                 │
+       ▼                 ▼                 ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│  Person DB   │  │Transaction DB│  │ Keycloak DB  │
+│  (Postgres)  │  │  (Postgres)  │  │  (Postgres)  │
+│    :5434     │  │    :5435     │  │    :5433     │
+└──────────────┘  └──────────────┘  └──────────────┘
+                         │
+                         ▼
+                  ┌──────────────┐
+                  │    Kafka     │
+                  │   (Events)   │
+                  │    :9092     │
+                  └──────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 Observability Stack                         │
+│     Prometheus │ Grafana │ Loki │ Tempo │ Promtail          │
+└─────────────────────────────────────────────────────────────┘
 ```
-
-**Полные диаграммы**: [docs/architecture/](docs/architecture/)
 
 ---
 
@@ -102,17 +122,17 @@ docker-compose ps
 Должны быть запущены:
 - ✅ individuals-api (8081)
 - ✅ person-service (8082)
-- ✅ individuals-keycloak (8080)
+- ✅ transaction-service (8083)
+- ✅ keycloak (8080)
+- ✅ kafka (9092)
+- ✅ zookeeper (2181)
 - ✅ nexus (8091)
 - ✅ prometheus (9090)
 - ✅ grafana (3000)
 - ✅ loki (3100)
 - ✅ tempo (3200)
-- ✅ promtail
-- ✅ person-postgres (5434)
-- ✅ keycloak-postgres (5433)
 
-### 4. Первый запрос — регистрация пользователя
+### 4. Регистрация пользователя
 ```bash
 curl -X POST http://localhost:8081/v1/auth/registration \
   -H 'Content-Type: application/json' \
@@ -125,14 +145,28 @@ curl -X POST http://localhost:8081/v1/auth/registration \
   }' | jq
 ```
 
-Ответ:
-```json
-{
-  "access_token": "eyJhbGc...",
-  "refresh_token": "eyJhbGc...",
-  "expires_in": 300,
-  "token_type": "Bearer"
-}
+### 5. Создание кошелька (через оркестратор)
+```bash
+TOKEN="<access_token from registration>"
+
+curl -X POST http://localhost:8081/v1/wallets \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "walletTypeUid": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+    "name": "My USD Wallet"
+  }' | jq
+```
+
+### 6. Инициализация депозита
+```bash
+curl -X POST http://localhost:8081/v1/transactions/deposit/init \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "walletUid": "<wallet_uid>",
+    "amount": 100
+  }' | jq
 ```
 
 ---
@@ -141,48 +175,59 @@ curl -X POST http://localhost:8081/v1/auth/registration \
 
 | Сервис | URL | Credentials | Назначение |
 |--------|-----|-------------|------------|
-| **Individuals API** | http://localhost:8081 | — | REST API (регистрация, логин) |
-| **Person Service** | http://localhost:8082 | — | REST API (CRUD persons) |
+| **Individuals API** | http://localhost:8081 | — | Orchestrator (auth, wallets, transactions) |
+| **Person Service** | http://localhost:8082 | — | User Data Management |
+| **Transaction Service** | http://localhost:8083 | — | Wallets & Transactions (internal) |
 | **Keycloak** | http://localhost:8080 | admin/admin | Identity Provider |
 | **Nexus OSS** | http://localhost:8091 | admin/admin123 | Maven Repository |
-| **Grafana** | http://localhost:3000 | admin/admin | Dashboards & Tracing |
+| **Grafana** | http://localhost:3000 | admin/admin | Dashboards |
 | **Prometheus** | http://localhost:9090 | — | Metrics |
-| **Loki** | http://localhost:3100 | — | Logs |
-| **Tempo** | http://localhost:3200 | — | Distributed Tracing |
 
 ---
 
-## 📊 Observability
+## 💳 API — Individuals API (Orchestrator)
 
-### Grafana Dashboards
-1. Открой http://localhost:3000 (admin/admin)
-2. Доступные дашборды:
-   - **Payment System Overview** — общая картина
-   - **Individuals API Overview** — метрики API
-   - **Keycloak Status** — статус Keycloak
+### Authentication
+```bash
+POST /v1/auth/registration    # Register new user
+POST /v1/auth/login           # Login
+POST /v1/auth/refresh-token   # Refresh JWT
+GET  /v1/auth/me              # Get current user info
+```
 
-### Distributed Tracing (Tempo)
-1. **Grafana → Explore → Tempo**
-2. Поиск по trace_id (из логов):
-   ```bash
-   docker logs individuals-api | grep trace_id | tail -1
-   ```
-3. Или поиск по service name: `individuals-api`
+### Wallets (proxied to Transaction Service)
+```bash
+POST /v1/wallets              # Create wallet
+GET  /v1/wallets/{uid}        # Get wallet
+GET  /v1/wallets              # List user wallets
+```
 
-### Logs (Loki)
-1. **Grafana → Explore → Loki**
-2. Запрос:
-   ```logql
-   {job="docker", service="individuals-api"} |= "registration"
-   ```
+### Transactions (proxied to Transaction Service)
+```bash
+POST /v1/transactions/{type}/init      # Init (deposit/withdrawal/transfer)
+POST /v1/transactions/{type}/confirm   # Confirm
+GET  /v1/transactions/{uid}/status     # Get status
+```
 
-### Metrics (Prometheus)
-1. **Grafana → Explore → Prometheus**
-2. Примеры запросов:
-   ```promql
-   rate(http_server_requests_seconds_count[5m])
-   jvm_memory_used_bytes{application="individuals-api"}
-   ```
+### Fee Structure
+
+| Operation | Fee | Flow |
+|-----------|-----|------|
+| Deposit | 0% | Async (Kafka) |
+| Withdrawal | 1% | Semi-sync (Kafka) |
+| Transfer | 0.5% | Sync (atomic) |
+
+---
+
+## 📊 Kafka Topics
+
+| Topic | Direction | Purpose |
+|-------|-----------|---------|
+| `deposit-requested` | → Payment Gateway | Initiate deposit |
+| `deposit-completed` | ← Payment Gateway | Credit wallet |
+| `withdrawal-requested` | → Payment Gateway | Initiate withdrawal |
+| `withdrawal-completed` | ← Payment Gateway | Confirm withdrawal |
+| `withdrawal-failed` | ← Payment Gateway | Refund on failure |
 
 ---
 
@@ -193,21 +238,18 @@ curl -X POST http://localhost:8081/v1/auth/registration \
 ./gradlew test
 ```
 
-### Генерация отчёта о покрытии
+### По модулям
 ```bash
-./gradlew jacocoTestReport
-
-# Открыть HTML отчёты
-open person-service/build/reports/jacoco/test/html/index.html
-open individuals-api/build/reports/jacoco/test/html/index.html
+./gradlew :person-service:test
+./gradlew :individuals-api:test
+./gradlew :transaction-service:test
 ```
 
-### Статистика тестов
-- **64 теста** (51 unit + 13 integration)
+### Статистика
+- **100 тестов** (unit + integration)
 - **Покрытие бизнес-логики**: 80-85%
 - **TestContainers** для PostgreSQL
-
-Подробнее: [docs/TEST_COVERAGE_REPORT.md](docs/TEST_COVERAGE_REPORT.md)
+- **H2** для быстрых unit-тестов
 
 ---
 
@@ -215,42 +257,23 @@ open individuals-api/build/reports/jacoco/test/html/index.html
 
 ### Сборка проектов
 ```bash
-# Все модули
 ./gradlew build
-
-# Только person-service
-./gradlew :person-service:build
-
-# Только individuals-api
-./gradlew :individuals-api:build
 ```
 
-### Публикация в Nexus
+### Запуск отдельных сервисов
 ```bash
-# Публикация person-service-client
-./gradlew :common:publish -PnexusUsername=admin -PnexusPassword=admin123
+# Инфраструктура
+docker-compose up -d zookeeper kafka transaction-postgres keycloak-postgres keycloak person-postgres
 
-# Проверка в Nexus
-curl -u admin:admin123 'http://localhost:8091/service/rest/v1/components?repository=maven-releases' | jq
+# Person Service
+./gradlew :person-service:bootRun
+
+# Transaction Service  
+./gradlew :transaction-service:bootRun
+
+# Individuals API
+./gradlew :individuals-api:bootRun
 ```
-
-### Запуск локально (без Docker)
-1. Подними инфраструктуру:
-   ```bash
-   docker-compose up -d person-postgres keycloak-postgres individuals-keycloak nexus
-   ```
-
-2. Запуск person-service:
-   ```bash
-   cd person-service
-   ./gradlew bootRun
-   ```
-
-3. Запуск individuals-api:
-   ```bash
-   cd individuals-api
-   SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
-   ```
 
 ---
 
@@ -289,6 +312,25 @@ docker exec nexus cat /nexus-data/admin.password
 # Проверка repository
 curl -u admin:<password> http://localhost:8091/service/rest/v1/repositories
 ```
+
+### Kafka consumer не обрабатывает события
+```bash
+docker exec kafka kafka-consumer-groups \
+  --bootstrap-server localhost:9092 \
+  --group transaction-service --describe
+```
+
+### Проверка логов
+```bash
+docker logs transaction-service 2>&1 | grep -i "error\|exception" | tail -20
+```
+
+### База данных
+```bash
+docker exec transaction-postgres psql -U postgres -d transaction \
+  -c "SELECT uid, type, status, amount FROM transactions ORDER BY created_at DESC LIMIT 10;"
+```
+
 
 ---
 

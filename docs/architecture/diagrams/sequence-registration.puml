@@ -1,0 +1,166 @@
+@startuml
+!theme plain
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+skinparam BoxPadding 10
+
+title User Registration Flow with Distributed Tracing & Compensating Transaction
+
+actor User
+participant "Individuals API" as API
+participant "Person Service" as PS
+database "Person Database" as DB
+participant "Keycloak" as KC
+database "Keycloak Database" as KDB
+participant "Tempo" as Tempo
+
+autonumber
+
+note over User, Tempo
+  <b>Registration Flow with Distributed Tracing</b>
+end note
+
+User -> API ++: POST /v1/auth/registration\n{email, password, firstName, lastName}
+
+note over API
+  Generate trace_id
+  (OpenTelemetry)
+end note
+
+API -> Tempo: Start span: registration
+
+note over API
+  Validate request:
+  - email format
+  - password strength
+  - confirm_password match
+end note
+
+API -> PS ++: POST /v1/persons\n{firstName, lastName, email}\nheader: traceparent
+
+note over PS
+  Start child span:
+  create_person
+end note
+
+PS -> PS: Generate user_uid (UUID)
+
+PS -> DB ++: BEGIN TRANSACTION
+
+PS -> DB: INSERT INTO users\n(id=user_uid, email,\nfirst_name, last_name)
+DB --> PS: OK
+
+PS -> DB: INSERT INTO individuals\n(user_id=user_uid,\nstatus=ACTIVE)
+DB --> PS: OK
+
+PS -> DB: COMMIT
+DB --> PS --: Transaction committed
+
+note over PS
+  Envers audit:
+  user_aud, individuals_aud
+  tables updated
+end note
+
+PS --> API --: 201 Created\n{userId: user_uid,\nemail, firstName, lastName}
+
+note over API #lightgreen
+  Person created successfully
+  with user_uid
+end note
+
+alt #lightgreen Keycloak user creation succeeds
+
+    API -> KC ++: POST /admin/realms/individuals/users\n{username=email,\nemail, firstName, lastName,\nenabled=true,\nattributes: {user_uid}}
+
+    KC -> KDB ++: INSERT INTO user_entity\n(username, email, realm_id)
+    KDB --> KC --: OK
+
+    KC -> KDB: INSERT INTO user_attribute\n(user_id, name="user_uid",\nvalue=user_uid)
+
+    KC --> API --: 201 Created\nLocation: .../users/{keycloak_id}
+
+    note over API #lightgreen
+      Keycloak user created
+      with user_uid attribute
+    end note
+
+    API -> KC ++: POST /admin/realms/individuals/users/{keycloak_id}/reset-password\n{value=password, temporary=false}
+    KC -> KDB: UPDATE credential\nSET password_hash
+    KC --> API --: 204 No Content
+
+    note over API #lightgreen
+      Password set successfully
+    end note
+
+    API -> KC ++: POST /realms/individuals/protocol/openid-connect/token\n{grant_type=password,\nusername=email, password}
+
+    KC -> KDB: SELECT * FROM user_entity\nWHERE username=email
+    KDB --> KC: User found
+
+    KC -> KC: Validate password hash
+
+    KC -> KC: Generate JWT tokens:\n- access_token (5 min)\n- refresh_token (30 min)
+
+    KC --> API --: 200 OK\n{access_token,\nrefresh_token,\nexpires_in=300}
+
+    API -> Tempo: End span: registration\n(duration, status=OK)
+
+    API --> User --: 200 OK\n{access_token,\nrefresh_token,\nexpires_in, token_type}
+
+    note over User #lightgreen
+      <b>Registration complete!</b>
+      User receives JWT tokens
+    end note
+
+else #pink Keycloak user creation fails (409 Conflict / 500 Error)
+
+    API -> KC ++: POST /admin/realms/individuals/users
+    KC --> API --: <b>409 Conflict / 500 Error</b>\n{error: "User exists" / "Internal error"}
+
+    note over API #orange
+      ⚠️ <b>Keycloak failed!</b>
+      Initiating COMPENSATING TRANSACTION
+    end note
+
+    API -> PS ++: <b><color:red>DELETE /v1/persons/{user_uid}</color></b>\nheader: traceparent
+
+    note over PS #orange
+      Start child span:
+      rollback_person
+    end note
+
+    PS -> DB ++: BEGIN TRANSACTION
+
+    PS -> DB: <color:red>DELETE FROM individuals\nWHERE user_id=user_uid</color>
+    DB --> PS: OK
+
+    PS -> DB: <color:red>DELETE FROM users\nWHERE id=user_uid</color>
+    DB --> PS: OK
+
+    PS -> DB: COMMIT
+    DB --> PS --: Transaction committed
+
+    note over PS
+      Envers audit:
+      DEL records in _aud tables
+    end note
+
+    PS --> API --: 204 No Content
+
+    note over API #lightgreen
+      ✅ <b>Rollback successful</b>
+      Person deleted from DB
+    end note
+
+    API -> Tempo: End span: registration\n(duration, status=<color:red>ERROR</color>)
+
+    API --> User --: <b><color:red>500 Internal Server Error</color></b>\n{error: "Registration failed:\nkeycloak error"}
+
+    note over User #pink
+      <b>Registration failed!</b>
+      No orphaned data
+    end note
+
+end
+@enduml
