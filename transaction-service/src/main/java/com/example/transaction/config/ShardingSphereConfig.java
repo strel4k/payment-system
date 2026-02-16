@@ -19,7 +19,6 @@ public class ShardingSphereConfig {
     @Value("classpath:shardingsphere-config.yaml")
     private Resource shardingConfigFile;
 
-
     @Bean
     public DataSource dataSource() throws SQLException, IOException {
         return YamlShardingSphereDataSourceFactory.createDataSource(
