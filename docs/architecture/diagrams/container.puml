@@ -10,55 +10,76 @@ Person(customer, "Customer", "Individual user")
 
 System_Boundary(payment_system, "Payment System") {
 
-    Container(individuals_api, "Individuals API", "Spring Boot, Java 17", "User registration, authentication, wallet operations")
-    Container(person_service, "Person Service", "Spring Boot, Java 17", "Personal data management, user profiles")
-    Container(transaction_service, "Transaction Service", "Spring Boot, Java 17", "Payment processing, transaction history")
+    Container(individuals_api, "Individuals API", "Spring Boot WebFlux, Java 17, Port 8081", "Orchestrator: user registration, authentication, wallet & transaction proxy")
+    Container(person_service, "Person Service", "Spring Boot MVC, Java 17, Port 8082", "Personal data management, user profiles, Hibernate Envers audit")
+    Container(transaction_service, "Transaction Service", "Spring Boot MVC, Java 17, Port 8083", "Wallet management, two-phase transaction processing, Kafka events")
 
-    ContainerDb(individuals_db, "Individuals Database", "PostgreSQL 15", "Stores wallet data")
-    ContainerDb(person_db, "Person Database", "PostgreSQL 15", "Stores user profiles, personal information")
-    ContainerDb(transaction_db, "Transaction Database", "PostgreSQL 15", "Stores transactions, payment history")
+    ContainerDb(person_db, "Person Database", "PostgreSQL 16, Port 5434", "Users, individuals, addresses, countries")
+    ContainerDb(transaction_db, "Transaction Database", "PostgreSQL 16, Port 5435", "Wallets, wallet_types, transactions")
+
+    Container(person_api_client, "person-service-api-client", "Maven Artifact 1.0.0", "Auto-generated DTOs from person-service OpenAPI spec")
+    Container(transaction_api_client, "transaction-service-api-client", "Maven Artifact 1.0.0", "Auto-generated DTOs from transaction-service OpenAPI spec")
 }
 
-System_Ext(keycloak, "Keycloak", "Identity and Access Management")
-ContainerDb_Ext(keycloak_db, "Keycloak Database", "PostgreSQL 15", "Stores users, roles, sessions")
+System_Ext(keycloak, "Keycloak 26.2", "Identity and Access Management, OAuth2/JWT, Port 8080")
+ContainerDb_Ext(keycloak_db, "Keycloak Database", "PostgreSQL 16, Port 5433", "Users, roles, sessions, realms")
 
-System_Ext(kafka, "Apache Kafka", "Message broker")
-System_Ext(tempo, "Grafana Tempo", "Distributed tracing")
-System_Ext(prometheus, "Prometheus", "Metrics collection")
-System_Ext(grafana, "Grafana", "Dashboards")
+System_Ext(kafka, "Apache Kafka", "Message broker, Port 29092 (internal) / 9092 (host)")
+System_Ext(zookeeper, "Apache Zookeeper", "Kafka coordination, Port 2181")
+System_Ext(kafka_exporter, "Kafka Exporter", "Prometheus metrics for Kafka, Port 9308")
+
+System_Ext(nexus, "Nexus OSS 3.x", "Maven artifact repository, Port 8091")
+
+System_Ext(prometheus, "Prometheus", "Metrics collection and storage, Port 9090")
+System_Ext(grafana, "Grafana 10.3", "Metrics, logs and traces dashboards, Port 3000")
+System_Ext(loki, "Grafana Loki 2.9", "Log aggregation, Port 3100")
+System_Ext(promtail, "Promtail", "Log shipping agent")
+System_Ext(tempo, "Grafana Tempo 2.6", "Distributed tracing backend, Port 3200")
 
 ' User interactions
 Rel(customer, individuals_api, "Uses", "HTTPS/REST, JSON")
 
-' API Gateway pattern
-Rel(individuals_api, person_service, "Queries user data", "HTTPS/REST, JSON")
-Rel(individuals_api, transaction_service, "Initiates payments", "HTTPS/REST, JSON")
+' API Gateway / BFF pattern
+Rel(individuals_api, person_service, "Manages person data", "HTTP/REST, JSON")
+Rel(individuals_api, transaction_service, "Manages wallets & transactions", "HTTP/REST, JSON")
 
 ' Authentication
-Rel(individuals_api, keycloak, "Authenticates", "HTTPS/Admin API + Token endpoint")
+Rel(individuals_api, keycloak, "Registers users, obtains tokens", "HTTPS/Admin API + Token endpoint")
 Rel(keycloak, keycloak_db, "Reads/Writes", "JDBC")
 
 ' Database connections
-Rel(individuals_api, individuals_db, "Reads/Writes", "JDBC, R2DBC")
-Rel(person_service, person_db, "Reads/Writes", "JDBC")
-Rel(transaction_service, transaction_db, "Reads/Writes", "JDBC")
+Rel(person_service, person_db, "Reads/Writes", "JDBC / Spring Data JPA")
+Rel(transaction_service, transaction_db, "Reads/Writes", "JDBC / Spring Data JPA")
 
-' Event-driven communication
-Rel(transaction_service, kafka, "Publishes", "deposit_completed,\nwithdrawal_completed,\ntransfer_completed")
-Rel(person_service, kafka, "Consumes", "user_events")
-Rel(individuals_api, kafka, "Consumes", "deposit_completed")
+' Kafka
+Rel(transaction_service, kafka, "Publishes events", "deposit-requested, withdrawal-requested")
+Rel(transaction_service, kafka, "Consumes events", "deposit-completed, withdrawal-completed, withdrawal-failed")
+Rel(kafka, zookeeper, "Coordination", "ZooKeeper Protocol")
 
-' Observability
-Rel(individuals_api, tempo, "Sends traces", "OTLP/gRPC")
-Rel(person_service, tempo, "Sends traces", "OTLP/gRPC")
-Rel(transaction_service, tempo, "Sends traces", "OTLP/gRPC")
+' Nexus
+Rel(person_api_client, nexus, "Published to", "Maven Deploy")
+Rel(transaction_api_client, nexus, "Published to", "Maven Deploy")
+Rel(individuals_api, nexus, "Resolves artifacts", "Maven / Gradle")
 
-Rel(individuals_api, prometheus, "/actuator/prometheus", "HTTP")
-Rel(person_service, prometheus, "/actuator/prometheus", "HTTP")
-Rel(transaction_service, prometheus, "/actuator/prometheus", "HTTP")
+' Observability - traces
+Rel(individuals_api, tempo, "Sends traces", "OTLP/HTTP")
+Rel(person_service, tempo, "Sends traces", "OTLP/HTTP")
+Rel(transaction_service, tempo, "Sends traces", "OTLP/HTTP")
 
-Rel(grafana, tempo, "Queries traces", "HTTP")
+' Observability - metrics
+Rel(prometheus, individuals_api, "Scrapes metrics", "/actuator/prometheus")
+Rel(prometheus, person_service, "Scrapes metrics", "/actuator/prometheus")
+Rel(prometheus, transaction_service, "Scrapes metrics", "/actuator/prometheus")
+Rel(prometheus, kafka_exporter, "Scrapes metrics", "/metrics")
+Rel(kafka_exporter, kafka, "Reads cluster state", "Kafka Protocol")
+
+' Observability - logs
+Rel(promtail, loki, "Ships logs", "HTTP/Push API")
+
+' Grafana data sources
 Rel(grafana, prometheus, "Queries metrics", "PromQL")
+Rel(grafana, loki, "Queries logs", "LogQL")
+Rel(grafana, tempo, "Queries traces", "TraceQL")
 Rel(customer, grafana, "Views dashboards", "HTTPS")
 
 ' Layout hints

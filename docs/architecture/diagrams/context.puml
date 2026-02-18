@@ -9,35 +9,40 @@ title System Context Diagram for Payment System
 Person(customer, "Customer", "Individual user who manages their wallet and makes payments")
 
 System_Boundary(payment_system, "Payment System") {
-    System(individuals_api, "Individuals API", "Handles user registration, authentication, and wallet operations")
-    System(person_service, "Person Service", "Manages personal data and user profiles")
-    System(transaction_service, "Transaction Service", "Processes payments and transactions")
+    System(individuals_api, "Individuals API", "Orchestrator: handles user registration, authentication, wallet and transaction operations (Port 8081)")
+    System(person_service, "Person Service", "Manages personal data, user profiles with full audit history (Port 8082)")
+    System(transaction_service, "Transaction Service", "Processes payments, manages wallets and transactions with two-phase commit (Port 8083)")
 }
 
-System_Ext(keycloak, "Keycloak", "Identity and Access Management")
-System_Ext(kafka, "Apache Kafka", "Message broker for async events")
-System_Ext(tempo, "Grafana Tempo", "Distributed tracing backend")
-System_Ext(prometheus, "Prometheus", "Metrics collection")
-System_Ext(grafana, "Grafana", "Observability dashboards")
+System_Ext(keycloak, "Keycloak", "Identity and Access Management, OAuth2/JWT (Port 8080)")
+System_Ext(kafka, "Apache Kafka", "Message broker for async transaction events (Port 9092)")
+System_Ext(nexus, "Nexus OSS", "Maven artifact repository — hosts person-service-api-client and transaction-service-api-client (Port 8091)")
+
+System_Ext(prometheus, "Prometheus", "Metrics collection (Port 9090)")
+System_Ext(grafana, "Grafana", "Observability dashboards: metrics, logs, traces (Port 3000)")
+System_Ext(loki, "Grafana Loki", "Centralized log aggregation (Port 3100)")
+System_Ext(tempo, "Grafana Tempo", "Distributed tracing backend (Port 3200)")
 
 Rel(customer, individuals_api, "Uses", "HTTPS/REST")
-Rel(individuals_api, person_service, "Queries user data", "HTTPS/REST")
-Rel(individuals_api, transaction_service, "Initiates payments", "HTTPS/REST")
-Rel(individuals_api, keycloak, "Authenticates users", "HTTPS/Admin API")
+Rel(individuals_api, person_service, "Manages person data", "HTTP/REST")
+Rel(individuals_api, transaction_service, "Manages wallets & transactions", "HTTP/REST")
+Rel(individuals_api, keycloak, "Authenticates users, obtains tokens", "HTTPS/Admin API")
 
-Rel(transaction_service, kafka, "Publishes events", "Kafka Protocol")
-Rel(person_service, kafka, "Consumes events", "Kafka Protocol")
+Rel(transaction_service, kafka, "Publishes & consumes events", "deposit-requested/completed, withdrawal-requested/completed/failed")
 
-Rel(individuals_api, tempo, "Sends traces", "OTLP/gRPC")
-Rel(person_service, tempo, "Sends traces", "OTLP/gRPC")
-Rel(transaction_service, tempo, "Sends traces", "OTLP/gRPC")
+Rel(individuals_api, nexus, "Resolves API client artifacts", "Maven/Gradle")
 
-Rel(individuals_api, prometheus, "Exposes metrics", "HTTP/Prometheus")
-Rel(person_service, prometheus, "Exposes metrics", "HTTP/Prometheus")
-Rel(transaction_service, prometheus, "Exposes metrics", "HTTP/Prometheus")
+Rel(individuals_api, tempo, "Sends traces", "OTLP/HTTP")
+Rel(person_service, tempo, "Sends traces", "OTLP/HTTP")
+Rel(transaction_service, tempo, "Sends traces", "OTLP/HTTP")
 
+Rel(prometheus, individuals_api, "Scrapes metrics", "HTTP")
+Rel(prometheus, person_service, "Scrapes metrics", "HTTP")
+Rel(prometheus, transaction_service, "Scrapes metrics", "HTTP")
+
+Rel(grafana, prometheus, "Queries metrics", "PromQL")
+Rel(grafana, loki, "Queries logs", "LogQL")
+Rel(grafana, tempo, "Queries traces", "TraceQL")
 Rel(customer, grafana, "Views dashboards", "HTTPS")
-Rel(grafana, tempo, "Queries traces", "HTTP")
-Rel(grafana, prometheus, "Queries metrics", "HTTP")
 
 @enduml

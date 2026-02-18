@@ -8,10 +8,11 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
-            <option value="$PROJECT_DIR$/common" />
             <option value="$PROJECT_DIR$/individuals-api" />
             <option value="$PROJECT_DIR$/person-service" />
+            <option value="$PROJECT_DIR$/person-service/person-service-api-client" />
             <option value="$PROJECT_DIR$/transaction-service" />
+            <option value="$PROJECT_DIR$/transaction-service/transaction-service-api-client" />
           </set>
         </option>
       </GradleProjectSettings>

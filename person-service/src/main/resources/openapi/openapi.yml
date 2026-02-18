@@ -5,9 +5,13 @@ info:
 servers:
   - url: http://localhost:8082
 
+tags:
+  - name: persons
+
 paths:
   /v1/persons:
     post:
+      tags: [persons]
       operationId: createPerson
       summary: Transactional create person (user + individual + address)
       requestBody:
@@ -25,9 +29,14 @@ paths:
                 $ref: '#/components/schemas/PersonResponse'
         '400':
           description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /v1/persons/{id}:
     get:
+      tags: [persons]
       operationId: getPersonById
       parameters:
         - in: path
@@ -42,8 +51,12 @@ paths:
               schema: { $ref: '#/components/schemas/PersonResponse' }
         '404':
           description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
 
     put:
+      tags: [persons]
       operationId: updatePerson
       parameters:
         - in: path
@@ -61,8 +74,14 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PersonResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
 
     delete:
+      tags: [persons]
       operationId: deletePerson
       parameters:
         - in: path
@@ -75,6 +94,7 @@ paths:
 
   /v1/persons/by-email:
     get:
+      tags: [persons]
       operationId: getPersonByEmail
       parameters:
         - in: query
@@ -89,6 +109,9 @@ paths:
               schema: { $ref: '#/components/schemas/PersonResponse' }
         '404':
           description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
 
 components:
   schemas:
@@ -118,12 +141,14 @@ components:
       properties:
         passportNumber: { type: string }
         phoneNumber: { type: string }
+        status: { type: string }
 
     UpdatePersonRequest:
       type: object
       properties:
         firstName: { type: string }
         lastName: { type: string }
+        filled: { type: boolean }
         address:
           $ref: '#/components/schemas/AddressRequest'
         individual:
@@ -131,12 +156,13 @@ components:
 
     PersonResponse:
       type: object
-      required: [id, email]
+      required: [userId, email]
       properties:
-        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
         email: { type: string, format: email }
         firstName: { type: string }
         lastName: { type: string }
+        filled: { type: boolean }
         address:
           $ref: '#/components/schemas/AddressResponse'
         individual:
@@ -159,3 +185,14 @@ components:
         passportNumber: { type: string }
         phoneNumber: { type: string }
         status: { type: string }
+
+    ErrorResponse:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details:
+          type: array
+          items:
+            type: string
+        timestamp: { type: string, format: date-time }

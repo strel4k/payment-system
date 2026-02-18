@@ -20,6 +20,7 @@
 - 💳 **Transaction Service** — обработка платежей и транзакций
 - 🔐 **Keycloak** — OAuth2/JWT сервер
 - 📬 **Apache Kafka** — асинхронные события
+- 📦 **Nexus OSS** — репозиторий Maven артефактов
 - 📊 **Observability Stack** — Prometheus, Grafana, Loki, Tempo
 
 ---
@@ -34,19 +35,28 @@
 | Компонент | Технология | Порт |
 |-----------|-----------|------|
 | **Individuals API** | Spring Boot WebFlux (Reactive) | 8081 |
-| **Person Service** | Spring Boot Web + JPA | 8082 |
-| **Transaction Service** | Spring Boot Web + JPA + Kafka | 8083 |
+| **Person Service** | Spring Boot MVC + JPA + Envers | 8082 |
+| **Transaction Service** | Spring Boot MVC + JPA + Kafka | 8083 |
 | **Person DB** | PostgreSQL 16 | 5434 |
 | **Transaction DB** | PostgreSQL 16 | 5435 |
 | **Keycloak** | Keycloak 26.2 | 8080 |
-| **Keycloak DB** | PostgreSQL 17 | 5433 |
-| **Kafka** | Apache Kafka | 9092 |
+| **Keycloak DB** | PostgreSQL 16 | 5433 |
+| **Kafka** | Apache Kafka | 9092 (host), 29092 (internal) |
 | **Zookeeper** | Apache Zookeeper | 2181 |
-| **Nexus OSS** | Nexus 3.75.1 | 8091 |
+| **Nexus OSS** | Nexus 3.x | 8091 |
 | **Prometheus** | Prometheus | 9090 |
-| **Grafana** | Grafana 10.3 | 3000 |
-| **Loki** | Loki 2.9 | 3100 |
+| **Grafana** | Grafana 10.3.1 | 3000 |
+| **Loki** | Loki 2.9.2 | 3100 |
 | **Tempo** | Tempo 2.6 | 3200 |
+| **Promtail** | Promtail | — |
+| **Kafka Exporter** | danielqsj/kafka-exporter | 9308 |
+
+**API Clients (Maven Artifacts)**:
+
+| Артефакт | GroupId | Version |
+|----------|---------|---------|
+| `person-service-api-client` | `com.example` | `1.0.0` |
+| `transaction-service-api-client` | `com.example` | `1.0.0` |
 
 ---
 
@@ -59,48 +69,49 @@
 
 **Основные шаги**:
 1. User → Individuals API: `POST /v1/auth/registration`
-2. API → Person Service: создание Person
+2. API → Person Service: создание Person (транзакционно)
 3. API → Keycloak: регистрация пользователя + пароль
 4. API → Keycloak: генерация JWT токенов
-5. При ошибке: compensating transaction (удаление Person)
+5. При ошибке Keycloak: compensating transaction → удаление Person
 
 ---
 
-#### Deposit Flow (Asynchronous)
+#### Deposit Flow (Asynchronous via Kafka)
 **Файл**: [docs/architecture/diagrams/sequence-deposit.puml](docs/architecture/diagrams/sequence-deposit.puml)
 
-Двухфазное пополнение через Kafka.
+Двухфазное пополнение через Kafka. Fee: 0%.
 
 **Основные шаги**:
-1. `POST /transactions/deposit/init` → расчёт условий (TTL 15 мин)
+1. `POST /transactions/deposit/init` → расчёт условий, requestUid (TTL 15 мин)
 2. `POST /transactions/deposit/confirm` → создание PENDING транзакции
-3. Kafka: `deposit-requested` → Payment Gateway
-4. Kafka: `deposit-completed` → зачисление на баланс
+3. Kafka: `deposit-requested` → внешний Payment Gateway
+4. Kafka: `deposit-completed` → зачисление на баланс, статус COMPLETED
 
 ---
 
 #### Withdrawal Flow (Semi-synchronous)
 **Файл**: [docs/architecture/diagrams/sequence-withdrawal.puml](docs/architecture/diagrams/sequence-withdrawal.puml)
 
-Вывод средств с немедленным списанием и Kafka подтверждением.
+Вывод средств с немедленным списанием и Kafka подтверждением. Fee: 1%.
 
 **Основные шаги**:
-1. `POST /transactions/withdrawal/init` → проверка баланса
-2. `POST /transactions/withdrawal/confirm` → списание, PENDING
+1. `POST /transactions/withdrawal/init` → проверка баланса, requestUid
+2. `POST /transactions/withdrawal/confirm` → pessimistic lock, списание, PENDING
 3. Kafka: `withdrawal-requested` → Payment Gateway
-4. Kafka: `withdrawal-completed` или `withdrawal-failed` (с refund)
+4. Kafka: `withdrawal-completed` → статус COMPLETED
+5. Kafka: `withdrawal-failed` → compensating transaction (refund), статус FAILED
 
 ---
 
-#### Transfer Flow (Synchronous)
+#### Transfer Flow (Synchronous Atomic)
 **Файл**: [docs/architecture/diagrams/sequence-transfer.puml](docs/architecture/diagrams/sequence-transfer.puml)
 
-Атомарный перевод между кошельками.
+Атомарный перевод между кошельками. Fee: 0.5%. Без Kafka.
 
 **Основные шаги**:
 1. `POST /transactions/transfer/init` → валидация обоих кошельков
-2. `POST /transactions/transfer/confirm` → atomic debit + credit
-3. Статус сразу COMPLETED (без Kafka)
+2. `POST /transactions/transfer/confirm` → pessimistic lock обоих кошельков, atomic debit + credit
+3. Статус сразу COMPLETED (no Kafka, no async)
 
 ---
 
@@ -109,24 +120,35 @@
 ### Микросервисная архитектура
 
 **Разделение ответственности**:
-- **individuals-api** — оркестратор, единая точка входа
-- **person-service** — персональные данные пользователей
-- **transaction-service** — кошельки, транзакции, платежи
+- **individuals-api** — оркестратор, единая точка входа, без собственной БД
+- **person-service** — персональные данные пользователей, Hibernate Envers аудит
+- **transaction-service** — кошельки, транзакции, Kafka-события
 - **Keycloak** — централизованная аутентификация
-
-**Преимущества**:
-- ✅ Независимое масштабирование сервисов
-- ✅ Изоляция отказов (failure isolation)
-- ✅ Разные технологические стеки
-- ✅ Независимые циклы разработки
 
 ### Reactive vs Blocking
 
 | Сервис | Стек | Причина |
 |--------|------|---------|
-| **individuals-api** | WebFlux | I/O-intensive (HTTP calls) |
-| **person-service** | Spring MVC | Database-heavy, проще |
-| **transaction-service** | Spring MVC | Database + Kafka |
+| **individuals-api** | WebFlux | I/O-intensive (HTTP calls к 3 сервисам) |
+| **person-service** | Spring MVC | Database-heavy, Envers, проще |
+| **transaction-service** | Spring MVC | Database + Kafka + pessimistic locking |
+
+### API Client Architecture
+
+Каждый сервис публикует собственный API-клиент как Maven артефакт:
+
+```
+person-service/
+└── person-service-api-client/   ← генерирует DTOs из openapi.yml → публикует в Nexus
+    └── com.example.dto.person.*
+
+transaction-service/
+└── transaction-service-api-client/  ← генерирует DTOs из transaction-service.yaml → публикует в Nexus
+    └── com.example.dto.transaction.*
+
+individuals-api/
+└── build.gradle.kts  ← зависит от обоих артефактов из Nexus
+```
 
 ### Database per Service
 
@@ -136,40 +158,29 @@
 | transaction-service | transaction_db | 5435 |
 | keycloak | keycloak_db | 5433 |
 
-**Преимущества**:
-- ✅ Независимое управление схемой
-- ✅ Изоляция данных
-- ✅ Возможность шардирования (transaction-service)
+**individuals-api** не имеет собственной БД — stateless оркестратор.
 
-### Database Sharding (Optional)
+### Database Sharding (Optional Profile)
 
 **Apache ShardingSphere JDBC** для transaction-service:
 - Шардирование по `user_uid`
 - 2 шарда (ds_0, ds_1)
 - Broadcast tables: `wallet_types`
 - Активация: `SPRING_PROFILES_ACTIVE=sharding`
-```yaml
-# shardingsphere-config.yaml
-rules:
-  - !SHARDING
-    tables:
-      transactions:
-        shardingColumn: user_uid
-        shardingAlgorithmName: user_uid_hash
-```
 
 ---
 
 ## 🔄 Transaction Flows
 
 ### Two-Phase Pattern (init → confirm)
+
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                    Init Phase                            │
 │  • Валидация входных данных                              │
 │  • Расчёт комиссии                                       │
 │  • Проверка баланса (withdrawal/transfer)                │
-│  • Генерация requestUid (TTL 15 мин)                     │
+│  • Генерация requestUid (TTL 15 мин, in-memory cache)    │
 │  • БД не изменяется!                                     │
 └──────────────────────────────────────────────────────────┘
                            │
@@ -177,36 +188,32 @@ rules:
 ┌──────────────────────────────────────────────────────────┐
 │                   Confirm Phase                          │
 │  • Получение данных из кеша по requestUid                │
+│  • Pessimistic locking (withdrawal/transfer)             │
 │  • Создание транзакции в БД                              │
-│  • Изменение баланса (withdrawal/transfer)               │
+│  • Изменение баланса                                     │
 │  • Отправка в Kafka (deposit/withdrawal)                 │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ### Fee Structure
 
-| Operation | Fee | Debit from | Credit to |
-|-----------|-----|------------|-----------|
-| Deposit | 0% | — | wallet |
-| Withdrawal | 1% | wallet | external |
-| Transfer | 0.5% | source wallet | target wallet |
+| Operation | Fee | Sync/Async | Kafka Topics |
+|-----------|-----|------------|--------------|
+| Deposit | 0% | Async | deposit-requested, deposit-completed |
+| Withdrawal | 1% | Semi-sync | withdrawal-requested, withdrawal-completed, withdrawal-failed |
+| Transfer | 0.5% | Sync | — |
 
 ---
 
 ## 📐 Архитектурные паттерны
 
-### 1. API Gateway Pattern
+### 1. API Gateway / BFF Pattern
 **individuals-api** как единая точка входа:
 - Роутинг к internal services
-- JWT валидация
+- JWT валидация (Spring Security OAuth2 Resource Server)
 - Request/response transformation
 
-### 2. Backend for Frontend (BFF)
-Агрегация данных из нескольких сервисов:
-- Person Service + Keycloak → User Info
-- Transaction Service → Wallets, Transactions
-
-### 3. Saga Pattern (Choreography)
+### 2. Saga Pattern (Choreography)
 
 **Registration Saga**:
 ```
@@ -217,29 +224,30 @@ rules:
 
 **Withdrawal Saga**:
 ```
-1. Debit Balance ──► OK
-2. Process Payment ──► FAIL
-3. [Compensate] Refund Balance ◄──
+1. Debit Balance ──► OK (synchronous)
+2. Process Payment ──► FAIL (via Kafka)
+3. [Compensate] Refund Balance ◄── (Kafka consumer)
 ```
 
-### 4. Two-Phase Commit (Application Level)
+### 3. Two-Phase Commit (Application Level)
 Init + Confirm разделение:
-- Atomicity через кеш с TTL
+- Atomicity через in-memory cache с TTL
 - Idempotency через requestUid
+
+### 4. Pessimistic Locking
+Используется в withdrawal и transfer:
+- `SELECT ... FOR UPDATE` предотвращает race conditions
+- Гарантирует консистентность баланса при конкурентных операциях
 
 ---
 
 ## 🔒 Security
 
 ### OAuth2 + JWT
-- **Keycloak** — centralized IdP
+- **Keycloak** — centralized IdP, realm `individuals`
 - **RS256** — JWT signature
-- **user_uid** — custom attribute для связи с Person
-
-### API Security
-- Все endpoints требуют JWT
-- User может видеть только свои wallets/transactions
-- Pessimistic locking для balance updates
+- **user_uid** — custom attribute для связи Keycloak user → Person entity
+- **Spring Security OAuth2 Resource Server** — JWT validation в всех сервисах
 
 ---
 
@@ -249,29 +257,35 @@ Init + Confirm разделение:
 
 | Pillar | Stack | Purpose |
 |--------|-------|---------|
-| **Metrics** | Prometheus + Grafana | JVM, HTTP, DB metrics |
-| **Logs** | Loki + Promtail | Centralized JSON logs |
-| **Traces** | Tempo + OpenTelemetry | Distributed tracing |
+| **Metrics** | Prometheus + Grafana | JVM, HTTP, DB, Kafka metrics |
+| **Logs** | Loki + Promtail | Centralized JSON logs (Logstash encoder) |
+| **Traces** | Tempo + OpenTelemetry | Distributed tracing (OTLP/HTTP) |
 
-### Correlation
+### Корреляция через trace_id
 ```json
 {
+  "@timestamp": "2026-02-18T15:28:01Z",
   "level": "INFO",
   "message": "Deposit completed",
-  "trace_id": "abc123",
-  "span_id": "def456",
-  "transaction_uid": "..."
+  "service": "transaction-service",
+  "traceId": "abc123def456",
+  "spanId": "789xyz"
 }
 ```
+
+### Дашборды Grafana
+- **Kafka** — импорт ID `7589` (kafka-exporter dashboard)
+- **JVM** — Spring Boot Actuator метрики
+- **PostgreSQL** — postgres-exporter метрики
 
 ---
 
 ## 🧪 Testing Strategy
 
-| Layer | Tools | Coverage |
-|-------|-------|----------|
-| Unit | JUnit 5, Mockito | Services, Utils |
-| Integration | TestContainers, H2 | Repositories, Controllers |
-| E2E | Docker Compose | Full flow (manual) |
+| Layer | Tools | Scope |
+|-------|-------|-------|
+| Unit | JUnit 5, Mockito | Services, Mappers |
+| Integration | TestContainers (PostgreSQL) | Repositories, Controllers |
+| Rollback | @Transactional tests | Transaction integrity |
 
-**Total**: 100 tests, 80%+ business logic coverage
+**Покрытие**: 80%+ бизнес-логика (после исключения автогенерированных DTO и entity классов)

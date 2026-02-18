@@ -18,7 +18,7 @@ TRANSACTION_SERVICE_URL = http://localhost:8083/actuator/health
 INFRA_SERVICES ?= person-postgres keycloak-postgres individuals-keycloak nexus loki prometheus grafana promtail tempo
 
 # Full infrastructure including Kafka
-INFRA_FULL ?= $(INFRA_SERVICES) zookeeper kafka transaction-postgres
+INFRA_FULL ?= $(INFRA_SERVICES) zookeeper kafka transaction-postgres kafka-exporter person-postgres-exporter transaction-postgres-exporter keycloak-postgres-exporter
 
 .PHONY: all up start stop clean logs rebuild infra infra-full infra-logs infra-stop health loki-test test test-coverage nexus-publish nexus-password kafka-topics kafka-ui
 

@@ -59,14 +59,17 @@ services:
       OTEL_LOGS_EXPORTER: none
     ports:
       - "8082:8082"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
     depends_on:
       person-postgres:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
-      interval: 5s
-      timeout: 2s
-      retries: 20
+      prometheus:
+        condition: service_healthy
 
   person-postgres:
     image: postgres:16-alpine
@@ -94,6 +97,12 @@ services:
     container_name: individuals-api
     ports:
       - "${INDIVIDUALS_API_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
     environment:
       SERVER_PORT: "8081"
       KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-http://individuals-keycloak:8080}
@@ -233,16 +242,19 @@ services:
       OTEL_LOGS_EXPORTER: none
     ports:
       - "8083:8083"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
     depends_on:
       transaction-postgres:
         condition: service_healthy
       kafka:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
-      interval: 5s
-      timeout: 2s
-      retries: 20
+      prometheus:
+        condition: service_healthy
 
   transaction-postgres:
     image: postgres:16-alpine
@@ -311,8 +323,10 @@ services:
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "2181"]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -331,11 +345,11 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list 2>/dev/null || exit 1"]
       interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      timeout: 15s
+      retries: 30
+      start_period: 90s
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -349,6 +363,56 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+
+  # ==================== EXPORTERS ====================
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: kafka-exporter
+    command:
+      - "--kafka.server=kafka:29092"
+    ports:
+      - "9308:9308"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  person-postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: person-postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@person-postgres:5432/person?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      person-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  transaction-postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: transaction-postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@transaction-postgres:5432/transaction?sslmode=disable"
+    ports:
+      - "9188:9187"
+    depends_on:
+      transaction-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  keycloak-postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: keycloak-postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://keycloak:keycloak@keycloak-postgres:5432/keycloak?sslmode=disable"
+    ports:
+      - "9189:9187"
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   person_postgres_data:

@@ -1,6 +1,6 @@
 package com.example.individualsapi.client;
 
-import com.example.individualsapi.client.dto.transaction.*;
+import com.example.dto.transaction.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;

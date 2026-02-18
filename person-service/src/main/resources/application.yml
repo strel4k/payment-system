@@ -1,0 +1,41 @@
+server:
+  port: ${SERVER_PORT:8082}
+
+spring:
+  application:
+    name: person-service
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5434/person}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.default_schema: person
+      hibernate.jpa.metamodel.population: disabled
+      org.hibernate.envers.default_schema: person
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    default-schema: person
+    schemas: person
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  tracing:
+    enabled: true
+
+logging:
+  pattern:
+    correlation: "[traceId=%X{traceId}, spanId=%X{spanId}] "
+  level:
+    root: INFO
+    org.springframework.web: INFO

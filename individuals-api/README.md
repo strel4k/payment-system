@@ -1,206 +1,285 @@
-# Individuals API
+# Payment System — Microservices Architecture
 
-Микросервис авторизации/аутентификации для платёжной системы.  
-Отвечает за регистрацию пользователя, выдачу access/refresh токенов и получение профиля текущего пользователя по JWT.
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
+[![Java](https://img.shields.io/badge/Java-17-orange)]()
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.0-green)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)]()
 
----
-
-## Содержание
-- [Технологический стек](#Технологический-стек)
-- [Запуск](#запуск)
-- [Архитектура и эндпоинты](#Архитектура-и-эндпоинты)
-- [Запуск через Docker Compose](#Запуск-через-Docker-Compose)
-- [Postman](#postman)
-- [Метрика](#Метрика)
-- [Логи](#логи)
-- [Grafana](#grafana)
-- [Тесты](#тесты)
-- [OpenAPI и генерация DTO](#OpenAPI-и-генерация-DTO)
-
-## Технологический стек
-
-- Java 17
-- Spring Boot 3.5, WebFlux
-- Spring Security, OAuth2 Resource Server (JWT)
-- Keycloak 26 (OIDC provider)
-- OpenAPI 3 + `org.openapi.generator` (генерация DTO)
-- Docker, Docker Compose
-- Prometheus (метрики)
-- Loki (+ агент сбора логов, настроенный через Docker)
-- Grafana (дашборды по метрикам и логам)
-- JUnit 5, Mockito, Reactor Test
+Полнофункциональная микросервисная платёжная система с **wallet management**, **transaction processing**, **event-driven architecture**, **distributed tracing** и **observability stack**.
 
 ---
 
-## Запуск
-Собрать только individuals-api:
-```text
-cd individuals-api
-./gradlew clean build
-```
-Запустить всю инфраструктуру (Keycloak, БД, метрики, логи, Grafana):
-```text
-cd ..
-docker compose up -d
-```
+## 🎯 Возможности
 
-## Архитектура и эндпоинты
-
-Сервис поднимается на порту **8081** и предоставляет API:
-
-### `POST /v1/auth/registration`
-
-Регистрация нового пользователя в Keycloak и одновременный логин.
-
-- **Request body:** `UserRegistrationRequest`
-  - `email`
-  - `password`
-  - `confirmPassword`
-- **Response:** `TokenResponse`
-  - `access_token`
-  - `refresh_token`
-  - `expires_in`
-  - `token_type`
-
-### `POST /v1/auth/login`
-
-Логин существующего пользователя через Keycloak.
-
-- **Request body:** `UserLoginRequest`
-  - `email`
-  - `password`
-- **Response:** `TokenResponse`
-
-### `POST /v1/auth/refresh-token`
-
-Обновление access-токена по refresh-токену.
-
-- **Request body:** `TokenRefreshRequest`
-  - `refresh_token`
-- **Response:** `TokenResponse`
-
-### `GET /v1/auth/me`
-
-Возвращает информацию о текущем пользователе.  
-JWT валидируется Spring Security (Resource Server), далее клеймы читаются из `Jwt`.
-
-- **Headers:** `Authorization: Bearer <access_token>`
-- **Response:** `UserInfoResponse`
-  - `id`
-  - `email`
-  - `roles` (список ролей из Keycloak)
-  - `created_at` (OffsetDateTime)
+- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service
+- ✅ **Wallet Management** — создание и управление кошельками пользователей
+- ✅ **Transaction Processing** — deposit, withdrawal, transfer с двухфазным подтверждением
+- ✅ **Event-Driven Architecture** — Apache Kafka для асинхронных операций
+- ✅ **OAuth2/JWT аутентификация** — интеграция с Keycloak
+- ✅ **Distributed Tracing** — OpenTelemetry + Grafana Tempo
+- ✅ **Full Observability** — Prometheus (метрики) + Loki (логи) + Grafana (визуализация)
+- ✅ **Artifact Management** — Nexus OSS для Maven артефактов (person-service-api-client, transaction-service-api-client)
+- ✅ **Database Audit** — Hibernate Envers для отслеживания изменений
+- ✅ **OpenAPI Specification** — автогенерация DTO из YAML
+- ✅ **Database Sharding** — Apache ShardingSphere JDBC (optional profile)
+- ✅ **Comprehensive Testing** — unit & integration тесты, 80%+ покрытие бизнес-логики
 
 ---
 
-## Запуск через Docker Compose
-```text
-cd payment-system
-docker compose build individuals-api
-docker compose up -d
-```
-- **Поднимаются контейнеры:**
-  - `individuals-keycloak – Keycloak (порт 8080)`
-  - `keycloak-postgres – Postgres 17 для Keycloak (порт 5433 наружу)`
-  - `individuals-api – микросервис (порт 8081)`
-  - `prometheus – Prometheus (порт 9090)`
-  - `loki – Loki (порт 3100)`
-  - `grafana – Grafana (порт 3000)`
-  - `(агент логов, если определён в docker-compose.yml)`
-  ```text
-  docker ps
-  ```
+## 📚 Документация
 
-## Postman
-Импортировать файл коллекции:
-```text
-postman/individuals-api.postman_collection.json
-```
-- Переменные коллекции:
-  - baseUrl – по умолчанию http://localhost:8081
-  - email – test3@example.com
-  - password – Qwe12345!
-  - accessToken – заполняется вручную после логина (или через скрипты)
-  - refreshToken – аналогично
+| Документ | Описание |
+|----------|----------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Архитектурные решения, паттерны, стек |
+| [transaction-service/README.md](transaction-service/README.md) | Transaction Service API и архитектура |
+| [docs/TEST_COVERAGE_REPORT.md](docs/TEST_COVERAGE_REPORT.md) | Отчёт о покрытии тестами |
 
-#### 1. Запрос Auth-Registration:
-- Запрос Auth-Registration:
-```text
-POST {{baseUrl}}/v1/auth/registration
-{
-    "email": "{{email}}",
-    "password": "{{password}}",
-    "confirmPassword": "{{password}}"
-}
+### Диаграммы (PlantUML)
+
+| Диаграмма | Описание |
+|-----------|----------|
+| [docs/architecture/diagrams/context.puml](docs/architecture/diagrams/context.puml) | C4 Context Diagram |
+| [docs/architecture/diagrams/container.puml](docs/architecture/diagrams/container.puml) | C4 Container Diagram |
+| [docs/architecture/diagrams/sequence-registration.puml](docs/architecture/diagrams/sequence-registration.puml) | User Registration Flow |
+| [docs/architecture/diagrams/sequence-deposit.puml](docs/architecture/diagrams/sequence-deposit.puml) | Deposit Flow (async Kafka) |
+| [docs/architecture/diagrams/sequence-withdrawal.puml](docs/architecture/diagrams/sequence-withdrawal.puml) | Withdrawal Flow (semi-sync + compensating) |
+| [docs/architecture/diagrams/sequence-transfer.puml](docs/architecture/diagrams/sequence-transfer.puml) | Transfer Flow (sync atomic) |
+
+---
+
+## 🏗️ Архитектура
+
 ```
-#### 2. Логин:
-- Запрос Auth-Login:
-```text
-POST {{baseUrl}}/v1/auth/login
-{
-  "email": "{{email}}",
-  "password": "{{password}}"
-}
-```
-#### 3. Refresh
-- Запрос Auth-Refresh Token:
-```text
-  POST {{baseUrl}}/v1/auth/refresh-token
-  {
-    "refresh_token": "{{refreshToken}}"
-  }
-```
-#### 4. Текущий пользователь
-- Запрос Auth-Me:
-```text
-GET {{baseUrl}}/v1/auth/me
-Authorization: Bearer {{accessToken}}
+                       ┌─────────────┐
+                       │    User     │
+                       └──────┬──────┘
+                              │ HTTPS/REST
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Individuals API (8081)                   │
+│              Orchestrator, WebFlux, Stateless               │
+│ • Authentication & Registration (Keycloak)                  │
+│ • Proxy to Person Service & Transaction Service             │
+│ • person-service-api-client + transaction-service-api-client│
+└────┬──────────────────┬──────────────────┬──────────────────┘
+     │                  │                  │
+     ▼                  ▼                  ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│   Person     │  │ Transaction  │  │   Keycloak   │
+│   Service    │  │   Service    │  │   (8080)     │
+│   (8082)     │  │   (8083)     │  └──────┬───────┘
+└──────┬───────┘  └──────┬───────┘         │
+       │                 │          ┌──────┴───────┐
+       ▼                 ▼          │ Keycloak DB  │
+┌──────────────┐  ┌──────────────┐  │ Postgres:5433│
+│  Person DB   │  │Transaction DB│  └──────────────┘
+│ Postgres:5434│  │ Postgres:5435│
+└──────────────┘  └──────┬───────┘
+                         │
+                  ┌──────▼───────┐
+                  │    Kafka     │
+                  │ 9092/29092   │
+                  └──────┬───────┘
+                         │
+               ┌─────────▼──────────┐
+               │   Kafka Exporter   │
+               │      :9308         │
+               └─────────┬──────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                 Observability Stack                         │
+│  Prometheus:9090 │ Grafana:3000 │ Loki:3100 │ Tempo:3200    │
+│                  Promtail (log shipper)                     │
+└─────────────────────────────────────────────────────────────┘
+
+                  ┌──────────────┐
+                  │  Nexus OSS   │
+                  │    :8091     │
+                  │ Maven repo   │
+                  └──────────────┘
 ```
 
-## Метрика
-- Spring Boot экспонирует метрики в формате Prometheus:
-```text
-  http://localhost:8081/actuator/prometheus
-```
-## Логи
-- Логи individuals-api пишутся в JSON через Logback encoder и забираются Promtail из Docker:
-  - конфиг promtail: promtail-config.yml
-  - логи отправляются в Loki по адресу http://loki:3100
-  
-В Grafana (datasource Loki) достаточно выполнить запрос:
-```text
-  {job="individuals-api"}
-```
-## Grafana
-- URL: http://localhost:3000
-- Логин/пароль: admin / admin
+---
 
-Датасорсы и базовые дашборды провиженятся из:
-```text
-grafana/provisioning/datasources
-grafana/provisioning/dashboards
-grafana/dashboards/*.json
+## 🚀 Быстрый старт
+
+### Требования
+- Docker & Docker Compose
+- JDK 17+ (для локальной разработки)
+
+### 1. Запуск всех сервисов
+
+```bash
+docker-compose up -d
 ```
-На дашбордах можно посмотреть:
-- графики метрик из Prometheus (http_server_requests_* для individuals-api);
-- логи из Loki по job individuals-api.
 
-## Тесты
-- Локально из дериктории individuals-api:
-```text
-  ./gradlew clean test
-  ./gradlew clean build
+Первый запуск занимает ~10-12 минут (JVM + OTel агент + Kafka).
+
+### 2. Проверка статуса
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
 ```
-Тесты покрывают:
-- маппинг ответов Keycloak в TokenResponse (TokenResponseTest);
-- регистрацию и маппинг JWT в UserInfoResponse (UserServiceTest);
-- работу REST-контроллера (AuthControllerTest);
-- интеграционный сценарий регистрации/логин/refresh/me через WebTestClient (AuthFlowIntegrationTest).
 
-## OpenAPI и генерация DTO
+Все сервисы должны быть `(healthy)`.
 
-- Спецификация API:
+### 3. Smoke test
 
-```text
-individuals-api/openapi/individuals-api.yaml
+```bash
+curl http://localhost:8081/actuator/health   # individuals-api
+curl http://localhost:8082/actuator/health   # person-service
+curl http://localhost:8083/actuator/health   # transaction-service
 ```
+
+---
+
+## 🌐 Порты и доступы
+
+| Сервис | URL | Credentials | Назначение |
+|--------|-----|-------------|------------|
+| **Individuals API** | http://localhost:8081 | — | Orchestrator (auth, wallets, transactions) |
+| **Person Service** | http://localhost:8082 | — | User Data Management (internal) |
+| **Transaction Service** | http://localhost:8083 | — | Wallets & Transactions (internal) |
+| **Keycloak** | http://localhost:8080 | admin/admin | Identity Provider |
+| **Nexus OSS** | http://localhost:8091 | admin/admin123 | Maven Repository |
+| **Grafana** | http://localhost:3000 | admin/admin | Dashboards |
+| **Prometheus** | http://localhost:9090 | — | Metrics |
+| **Kafka UI** | http://localhost:8084 | — | Kafka Browser |
+
+---
+
+## 💳 API — Individuals API (Orchestrator)
+
+### Authentication
+```bash
+POST /v1/auth/registration    # Register new user
+POST /v1/auth/login           # Login
+POST /v1/auth/refresh-token   # Refresh JWT
+GET  /v1/auth/me              # Get current user info
+```
+
+### Wallets (proxied to Transaction Service)
+```bash
+POST /v1/wallets              # Create wallet
+GET  /v1/wallets/{uid}        # Get wallet
+GET  /v1/wallets              # List user wallets
+```
+
+### Transactions (proxied to Transaction Service)
+```bash
+POST /v1/transactions/{type}/init      # Init (deposit/withdrawal/transfer)
+POST /v1/transactions/{type}/confirm   # Confirm
+GET  /v1/transactions/{uid}/status     # Get status
+```
+
+### Fee Structure
+
+| Operation | Fee | Flow |
+|-----------|-----|------|
+| Deposit | 0% | Async (Kafka) |
+| Withdrawal | 1% | Semi-sync (Kafka) |
+| Transfer | 0.5% | Sync (atomic) |
+
+---
+
+## 📊 Kafka Topics
+
+| Topic | Producer | Consumer | Purpose |
+|-------|----------|----------|---------|
+| `deposit-requested` | transaction-service | Payment Gateway | Initiate deposit |
+| `deposit-completed` | Payment Gateway | transaction-service | Credit wallet |
+| `withdrawal-requested` | transaction-service | Payment Gateway | Initiate withdrawal |
+| `withdrawal-completed` | Payment Gateway | transaction-service | Confirm withdrawal |
+| `withdrawal-failed` | Payment Gateway | transaction-service | Refund on failure |
+
+---
+
+## 📦 API Client Artifacts
+
+Каждый сервис публикует собственный API-клиент в Nexus:
+
+```bash
+# Публикация
+./gradlew :person-service:person-service-api-client:publishToMavenLocal
+./gradlew :transaction-service:transaction-service-api-client:publishToMavenLocal
+
+# Или в Nexus (при запущенном Docker)
+./gradlew :person-service:person-service-api-client:publish
+./gradlew :transaction-service:transaction-service-api-client:publish
+```
+
+---
+
+## 🧪 Тестирование
+
+```bash
+# Все тесты
+./gradlew test
+
+# По модулям
+./gradlew :person-service:test
+./gradlew :individuals-api:test
+./gradlew :transaction-service:test
+```
+
+---
+
+## 🔧 Локальная разработка
+
+### Пересборка JAR и Docker образа одного сервиса
+
+```bash
+./gradlew :individuals-api:bootJar
+docker-compose up -d --build individuals-api
+```
+
+### Flyway и volumes
+
+При изменении уже применённых миграций необходимо пересоздать volumes:
+```bash
+docker-compose down -v
+docker-compose up -d
+```
+
+> ⚠️ Никогда не редактируй уже применённые файлы миграций V1, V2 и т.д. — только добавляй новые.
+
+---
+
+## 🐛 Troubleshooting
+
+### Сервис не стартует
+```bash
+docker logs individuals-api --tail 50
+docker logs transaction-service --tail 50
+```
+
+### Kafka healthcheck
+```bash
+# Kafka использует внутренний listener для healthcheck
+docker exec kafka kafka-topics --bootstrap-server localhost:29092 --list
+```
+
+### Flyway checksum mismatch
+```bash
+# Пересоздать базы (удаляет все данные!)
+docker-compose down -v && docker-compose up -d
+```
+
+### Prometheus targets
+Открой http://localhost:9090/targets — все должны быть UP.
+
+### Kafka consumer lag
+```bash
+docker exec kafka kafka-consumer-groups \
+  --bootstrap-server localhost:29092 \
+  --group transaction-service --describe
+```
+
+### Grafana Kafka Dashboard
+Импортируй dashboard ID **7589** для kafka-exporter метрик.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.

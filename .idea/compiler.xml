@@ -21,6 +21,9 @@
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
+      <module name="IdeaProjects.payment-system.common" target="17" />
+      <module name="IdeaProjects.payment-system.common.main" target="17" />
+      <module name="IdeaProjects.payment-system.common.test" target="17" />
       <module name="individuals-api" target="17" />
       <module name="individuals-api.integrationTest" target="17" />
       <module name="individuals-api.main" target="17" />

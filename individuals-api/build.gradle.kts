@@ -17,6 +17,7 @@ java {
 }
 
 repositories {
+    mavenLocal()
     mavenCentral()
     maven {
         name = "nexus"
@@ -33,8 +34,9 @@ dependencies {
 
     val lombokVersion = "1.18.42"
 
-    // Person Service Client from Nexus
-    implementation("com.example:person-service-client:1.0.0")
+    // Person & Transaction Service clients from Nexus
+    implementation("com.example:person-service-api-client:1.0.0")
+    implementation("com.example:transaction-service-api-client:1.0.0")
 
     // --- runtime ---
     implementation("org.springframework.boot:spring-boot-starter-webflux")

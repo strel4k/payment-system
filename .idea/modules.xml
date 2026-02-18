@@ -6,8 +6,6 @@
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/person-service/IdeaProjects.payment-system.person-service.test.iml" filepath="$PROJECT_DIR$/.idea/modules/person-service/IdeaProjects.payment-system.person-service.test.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/individuals-api/com.example.payment-system.individuals-api.main.iml" filepath="$PROJECT_DIR$/.idea/modules/individuals-api/com.example.payment-system.individuals-api.main.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/individuals-api/com.example.payment-system.individuals-api.test.iml" filepath="$PROJECT_DIR$/.idea/modules/individuals-api/com.example.payment-system.individuals-api.test.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/com.example.payment-system.main.iml" filepath="$PROJECT_DIR$/.idea/modules/com.example.payment-system.main.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/com.example.payment-system.test.iml" filepath="$PROJECT_DIR$/.idea/modules/com.example.payment-system.test.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/transaction-service/payment-system.transaction-service.main.iml" filepath="$PROJECT_DIR$/.idea/modules/transaction-service/payment-system.transaction-service.main.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/transaction-service/payment-system.transaction-service.test.iml" filepath="$PROJECT_DIR$/.idea/modules/transaction-service/payment-system.transaction-service.test.iml" />
     </modules>

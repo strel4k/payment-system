@@ -1,0 +1,71 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+
+  # ==================== INFRASTRUCTURE ====================
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ['prometheus:9090']
+
+  - job_name: "grafana"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["grafana:3000"]
+
+  - job_name: "loki"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: "tempo"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["tempo:3200"]
+
+  # ==================== KAFKA ====================
+
+  - job_name: "kafka-exporter"
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
+
+  # ==================== DATABASES ====================
+
+  - job_name: "person-postgres"
+    static_configs:
+      - targets: ["person-postgres-exporter:9187"]
+
+  - job_name: "transaction-postgres"
+    static_configs:
+      - targets: ["transaction-postgres-exporter:9187"]
+
+  - job_name: "keycloak-postgres"
+    static_configs:
+      - targets: ["keycloak-postgres-exporter:9187"]
+
+  # ==================== APPLICATION SERVICES ====================
+
+  - job_name: "individuals-api"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["individuals-api:8081"]
+
+  - job_name: "person-service"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["person-service:8082"]
+
+  - job_name: "transaction-service"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["transaction-service:8083"]
+
+  # ==================== AUTH ====================
+
+  - job_name: "keycloak"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["individuals-keycloak:9000"]

@@ -1,8 +1,8 @@
 package com.example.individualsapi.controller;
 
 import com.example.individualsapi.client.TransactionServiceClient;
-import com.example.individualsapi.client.dto.transaction.CreateWalletRequest;
-import com.example.individualsapi.client.dto.transaction.WalletResponse;
+import com.example.dto.transaction.CreateWalletRequest;
+import com.example.dto.transaction.WalletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
