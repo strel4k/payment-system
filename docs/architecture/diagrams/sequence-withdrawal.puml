@@ -1,0 +1,101 @@
+@startuml
+!theme plain
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+skinparam BoxPadding 10
+
+title Withdrawal Flow — Semi-Synchronous (Kafka + Compensating Transaction)
+
+actor User
+participant "Individuals API" as API
+participant "Transaction Service" as TS
+database "Transaction DB" as DB
+queue "Kafka" as K
+participant "Tempo" as Tempo
+
+autonumber
+
+note over User, Tempo
+  <b>Withdrawal Flow — Fee: 1%</b>
+  Balance deducted immediately at confirm
+  Kafka confirms/refunds async
+end note
+
+== Phase 1: Init ==
+
+User -> API ++: POST /v1/transactions/withdrawal/init\n{walletUid, amount}
+API -> TS ++: POST /api/v1/transactions/withdrawal/init\n{walletUid, amount}
+
+TS -> DB: SELECT wallet WHERE uid=walletUid\nAND userUid=currentUser
+DB --> TS: wallet (balance)
+
+TS -> TS: Check balance >= amount * 1.01
+note over TS
+  fee = amount * 0.01
+  requestUid (TTL 15 min)
+  balance check: balance >= amount + fee
+end note
+
+TS --> API --: 200 OK\n{requestUid, amount, fee, total}
+API --> User --: 200 OK\n{requestUid, amount, fee, total}
+
+== Phase 2: Confirm ==
+
+User -> API ++: POST /v1/transactions/withdrawal/confirm\n{requestUid}
+API -> TS ++: POST /api/v1/transactions/withdrawal/confirm\n{requestUid}
+
+TS -> TS: Get from cache by requestUid
+
+TS -> DB ++: BEGIN TRANSACTION
+TS -> DB: SELECT wallet FOR UPDATE\n(pessimistic lock)
+DB --> TS: wallet locked
+TS -> DB: UPDATE wallets\nSET balance = balance - (amount + fee)\nWHERE uid=walletUid
+DB --> TS: OK
+TS -> DB: INSERT INTO transactions\n(type=WITHDRAWAL, status=PENDING,\namount, fee)
+DB --> TS: transaction created
+TS -> DB: COMMIT
+DB --> TS --: OK
+
+TS -> K: publish withdrawal-requested\n{transactionUid, walletUid, amount}
+
+TS --> API --: 201 Created\n{transactionUid, status=PENDING}
+API --> User --: 201 Created\n{transactionUid, status=PENDING}
+
+== Async: Success ==
+
+K -> TS ++: consume withdrawal-completed\n{transactionUid}
+
+TS -> DB: UPDATE transactions\nSET status=COMPLETED\nWHERE uid=transactionUid
+DB --> TS: OK
+TS --> K --: ACK
+
+note over DB #lightgreen
+  Withdrawal confirmed
+  Transaction: COMPLETED
+end note
+
+== Async: Failure (Compensating Transaction) ==
+
+K -> TS ++: consume withdrawal-failed\n{transactionUid, reason}
+
+note over TS #orange
+  ⚠️ Payment failed!
+  Initiating REFUND
+end note
+
+TS -> DB ++: BEGIN TRANSACTION
+TS -> DB: UPDATE wallets\nSET balance = balance + (amount + fee)\nWHERE uid=walletUid
+DB --> TS: OK
+TS -> DB: UPDATE transactions\nSET status=FAILED,\nfailureReason=reason
+DB --> TS: OK
+TS -> DB: COMMIT
+DB --> TS --: OK
+
+TS --> K --: ACK
+
+note over DB #lightgreen
+  ✅ Balance refunded
+  Transaction: FAILED
+end note
+
+@enduml

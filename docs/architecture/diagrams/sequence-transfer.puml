@@ -1,0 +1,83 @@
+@startuml
+!theme plain
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+skinparam BoxPadding 10
+
+title Transfer Flow — Synchronous Atomic
+
+actor User
+participant "Individuals API" as API
+participant "Transaction Service" as TS
+database "Transaction DB" as DB
+participant "Tempo" as Tempo
+
+autonumber
+
+note over User, Tempo
+  <b>Transfer Flow — Fee: 0.5%</b>
+  Fully synchronous — no Kafka
+  Atomic debit + credit in single transaction
+  Status immediately COMPLETED
+end note
+
+== Phase 1: Init ==
+
+User -> API ++: POST /v1/transactions/transfer/init\n{walletUid, targetWalletUid, amount}
+API -> TS ++: POST /api/v1/transactions/transfer/init\n{walletUid, targetWalletUid, amount}
+
+TS -> DB: SELECT source_wallet WHERE uid=walletUid\nAND userUid=currentUser
+DB --> TS: source wallet (balance)
+
+TS -> DB: SELECT target_wallet WHERE uid=targetWalletUid\nAND status=ACTIVE
+DB --> TS: target wallet
+
+TS -> TS: Check source balance >= amount * 1.005\nfee = amount * 0.005\nGenerate requestUid (TTL 15 min)
+
+TS --> API --: 200 OK\n{requestUid, amount, fee,\nsourceWallet, targetWallet}
+API --> User --: 200 OK\n{requestUid, amount, fee}
+
+== Phase 2: Confirm (Atomic) ==
+
+User -> API ++: POST /v1/transactions/transfer/confirm\n{requestUid}
+API -> Tempo: Start span: transfer_confirm
+API -> TS ++: POST /api/v1/transactions/transfer/confirm\n{requestUid}
+
+TS -> TS: Get from cache by requestUid
+
+TS -> DB ++: BEGIN TRANSACTION
+
+TS -> DB: SELECT source_wallet FOR UPDATE\n(pessimistic lock — prevents race conditions)
+DB --> TS: source wallet locked
+
+TS -> DB: SELECT target_wallet FOR UPDATE
+DB --> TS: target wallet locked
+
+TS -> DB: UPDATE source_wallet\nSET balance = balance - (amount + fee)
+DB --> TS: OK
+
+TS -> DB: UPDATE target_wallet\nSET balance = balance + amount
+DB --> TS: OK
+
+TS -> DB: INSERT INTO transactions\n(type=TRANSFER, status=COMPLETED,\namount, fee, walletUid,\ntargetWalletUid)
+DB --> TS: OK
+
+TS -> DB: COMMIT
+DB --> TS --: Transaction committed atomically
+
+note over DB #lightgreen
+  Source: balance -= amount + fee
+  Target: balance += amount
+  Transaction: COMPLETED
+end note
+
+TS --> API --: 201 Created\n{transactionUid, status=COMPLETED}
+API -> Tempo: End span: transfer_confirm (status=OK)
+API --> User --: 201 Created\n{transactionUid, status=COMPLETED}
+
+note over User #lightgreen
+  <b>Transfer complete!</b>
+  No async step needed
+end note
+
+@enduml
