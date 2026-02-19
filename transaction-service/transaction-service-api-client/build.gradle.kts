@@ -20,20 +20,20 @@ dependencies {
     api("jakarta.annotation:jakarta.annotation-api:2.1.1")
 }
 
-val personSpec = "${rootProject.projectDir}/person-service/src/main/resources/openapi/openapi.yml"
-val genDir = layout.buildDirectory.dir("generated-sources/openapi-person-models")
+val transactionSpec = "${rootProject.projectDir}/transaction-service/openapi/transaction-service.yaml"
+val genDir = layout.buildDirectory.dir("generated-sources/openapi-transaction-models")
 
-tasks.register<org.openapitools.generator.gradle.plugin.tasks.GenerateTask>("generatePersonModels") {
+tasks.register<org.openapitools.generator.gradle.plugin.tasks.GenerateTask>("generateTransactionModels") {
     generatorName.set("java")
-    inputSpec.set(personSpec)
+    inputSpec.set(transactionSpec)
     outputDir.set(genDir.get().asFile.absolutePath)
 
-    modelPackage.set("com.example.dto.person")
+    modelPackage.set("com.example.dto.transaction")
 
     globalProperties.set(
         mapOf(
-            "models"         to "",
-            "apis"           to "false",
+            "models"          to "",
+            "apis"            to "false",
             "supportingFiles" to "false"
         )
     )
@@ -68,22 +68,25 @@ sourceSets {
 }
 
 tasks.named("compileJava") {
-    dependsOn("generatePersonModels")
+    dependsOn("generateTransactionModels")
 }
 
-// ── Публикация в Nexus ─────────────────
+val nexusUrl      = System.getenv("NEXUS_URL")      ?: findProperty("nexusUrl")?.toString()      ?: "http://localhost:8091/repository/maven-releases/"
+val nexusUser     = System.getenv("NEXUS_USERNAME") ?: findProperty("nexusUsername")?.toString() ?: "admin"
+val nexusPassword = System.getenv("NEXUS_PASSWORD") ?: findProperty("nexusPassword")?.toString() ?: "admin123"
+
 publishing {
     publications {
         create<MavenPublication>("maven") {
             groupId    = "com.example"
-            artifactId = "person-service-api-client"
+            artifactId = "transaction-service-api-client"
             version    = "1.0.0"
 
             from(components["java"])
 
             pom {
-                name.set("Person Service API Client")
-                description.set("Auto-generated DTOs from person-service OpenAPI spec")
+                name.set("Transaction Service API Client")
+                description.set("Auto-generated DTOs from transaction-service OpenAPI spec")
             }
         }
     }
@@ -91,11 +94,11 @@ publishing {
     repositories {
         maven {
             name = "nexus"
-            url  = uri("http://localhost:8091/repository/maven-releases/")
+            url  = uri(nexusUrl)
             isAllowInsecureProtocol = true
             credentials {
-                username = findProperty("nexusUsername")?.toString() ?: "admin"
-                password = findProperty("nexusPassword")?.toString() ?: "admin123"
+                username = nexusUser
+                password = nexusPassword
             }
         }
         mavenLocal()

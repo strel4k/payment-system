@@ -16,16 +16,20 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
+val nexusUrl      = System.getenv("NEXUS_URL")      ?: findProperty("nexusUrl")?.toString()      ?: "http://localhost:8091/repository/maven-releases/"
+val nexusUser     = System.getenv("NEXUS_USERNAME") ?: findProperty("nexusUsername")?.toString() ?: "admin"
+val nexusPassword = System.getenv("NEXUS_PASSWORD") ?: findProperty("nexusPassword")?.toString() ?: "admin123"
+
 repositories {
     mavenLocal()
     mavenCentral()
     maven {
         name = "nexus"
-        url = uri("http://localhost:8091/repository/maven-releases/")
+        url = uri(nexusUrl)
         isAllowInsecureProtocol = true
         credentials {
-            username = findProperty("nexusUsername")?.toString() ?: "admin"
-            password = findProperty("nexusPassword")?.toString() ?: "admin123"
+            username = nexusUser
+            password = nexusPassword
         }
     }
 }

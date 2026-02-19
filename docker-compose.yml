@@ -45,6 +45,10 @@ services:
     build:
       context: .
       dockerfile: person-service/Dockerfile
+      args:
+        NEXUS_URL: http://host.docker.internal:8091/repository/maven-releases/
+        NEXUS_USERNAME: ${NEXUS_USERNAME:-admin}
+        NEXUS_PASSWORD: ${NEXUS_PASSWORD:-admin123}
     container_name: person-service
     environment:
       SERVER_PORT: "8082"
@@ -94,6 +98,10 @@ services:
     build:
       context: .
       dockerfile: individuals-api/Dockerfile
+      args:
+        NEXUS_URL: http://host.docker.internal:8091/repository/maven-releases/
+        NEXUS_USERNAME: ${NEXUS_USERNAME:-admin}
+        NEXUS_PASSWORD: ${NEXUS_PASSWORD:-admin123}
     container_name: individuals-api
     ports:
       - "${INDIVIDUALS_API_PORT:-8081}:8081"
@@ -212,7 +220,9 @@ services:
     volumes:
       - nexus_data:/nexus-data
     environment:
-      - INSTALL4J_ADD_VM_PARAMS=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=273m
+      - INSTALL4J_ADD_VM_PARAMS=-Xms1024m -Xmx1024m -XX:MaxDirectMemorySize=512m
+      - NEXUS_SECURITY_INITIAL_PASSWORD=admin123
+      - NEXUS_SECURITY_RANDOMPASSWORD=false
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/service/rest/v1/status"]
       interval: 30s
@@ -226,6 +236,10 @@ services:
     build:
       context: .
       dockerfile: transaction-service/Dockerfile
+      args:
+        NEXUS_URL: http://host.docker.internal:8091/repository/maven-releases/
+        NEXUS_USERNAME: ${NEXUS_USERNAME:-admin}
+        NEXUS_PASSWORD: ${NEXUS_PASSWORD:-admin123}
     container_name: transaction-service
     environment:
       SERVER_PORT: "8083"

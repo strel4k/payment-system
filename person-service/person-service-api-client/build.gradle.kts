@@ -32,8 +32,8 @@ tasks.register<org.openapitools.generator.gradle.plugin.tasks.GenerateTask>("gen
 
     globalProperties.set(
         mapOf(
-            "models"         to "",
-            "apis"           to "false",
+            "models"          to "",
+            "apis"            to "false",
             "supportingFiles" to "false"
         )
     )
@@ -71,7 +71,10 @@ tasks.named("compileJava") {
     dependsOn("generatePersonModels")
 }
 
-// ── Публикация в Nexus ───────────────
+val nexusUrl      = System.getenv("NEXUS_URL")      ?: findProperty("nexusUrl")?.toString()      ?: "http://localhost:8091/repository/maven-releases/"
+val nexusUser     = System.getenv("NEXUS_USERNAME") ?: findProperty("nexusUsername")?.toString() ?: "admin"
+val nexusPassword = System.getenv("NEXUS_PASSWORD") ?: findProperty("nexusPassword")?.toString() ?: "admin123"
+
 publishing {
     publications {
         create<MavenPublication>("maven") {
@@ -91,11 +94,11 @@ publishing {
     repositories {
         maven {
             name = "nexus"
-            url  = uri("http://localhost:8091/repository/maven-releases/")
+            url  = uri(nexusUrl)
             isAllowInsecureProtocol = true
             credentials {
-                username = findProperty("nexusUsername")?.toString() ?: "admin"
-                password = findProperty("nexusPassword")?.toString() ?: "admin123"
+                username = nexusUser
+                password = nexusPassword
             }
         }
         mavenLocal()
