@@ -212,8 +212,8 @@ GET  /v1/transactions/{uid}/status     # Get status
 
 ## 🧪 Тестирование
 
+### Unit-тесты
 ```bash
-# Все тесты
 ./gradlew test
 
 # По модулям
@@ -221,6 +221,28 @@ GET  /v1/transactions/{uid}/status     # Get status
 ./gradlew :individuals-api:test
 ./gradlew :transaction-service:test
 ```
+
+### Integration-тесты
+```bash
+# individuals-api (Keycloak + WebFlux)
+./gradlew :individuals-api:integrationTest -x test
+
+# transaction-service (PostgreSQL + ShardingSphere)
+./gradlew :transaction-service:integrationTest -x test
+```
+
+### Покрытие
+- **Покрытие бизнес-логики**: 80%+
+- **Testcontainers**: PostgreSQL, Keycloak (quay.io/keycloak/keycloak:26.2)
+
+### Integration-тесты — individuals-api
+
+| Класс | Описание |
+|-------|----------|
+| `AuthFlowIntegrationTest` | Registration → Me, Login, Duplicate 409 |
+| `WalletTransactionFlowIT` | E2E deposit flow, Wallets CRUD, Transactions lifecycle |
+
+Тесты поднимают реальный Keycloak-контейнер (~1 мин) и проверяют полный auth-flow через JWT.
 
 ---
 
