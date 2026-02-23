@@ -21,13 +21,10 @@ COPY person-service/ person-service/
 COPY transaction-service/ transaction-service/
 COPY individuals-api/ individuals-api/
 
-# 1) Собираем API-клиент
 RUN ./gradlew --no-daemon :person-service:person-service-api-client:build -x test
 
-# 2) Публикуем API-клиент в Nexus
 RUN ./gradlew --no-daemon :person-service:person-service-api-client:publish --info
 
-# 3) Собираем приложение
 RUN ./gradlew --no-daemon :person-service:bootJar -x test
 
 FROM eclipse-temurin:17-jre-alpine
