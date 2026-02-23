@@ -96,7 +96,7 @@ tasks.withType<Test> {
 val integrationTestSourceSet = sourceSets.create("integrationTest") {
     compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
     runtimeClasspath += output + compileClasspath
-    resources.srcDir("src/integrationTest/resources")
+    resources.srcDirs("src/integrationTest/resources", "src/test/resources")
     java.srcDir("src/integrationTest/java")
 }
 
@@ -121,7 +121,6 @@ openApiGenerate {
     generatorName.set("java")
     inputSpec.set("$projectDir/openapi/individuals-api.yaml")
 
-    // можно оставить старый вариант с buildDir — это просто warning о депрекейшене
     outputDir.set("$buildDir/generated-sources/openapi")
 
     apiPackage.set("com.example.api")
@@ -141,7 +140,6 @@ sourceSets {
     }
 }
 
-// чтобы перед компиляцией Java всегда генерировались DTO
 tasks.named("compileJava") {
     dependsOn("openApiGenerate")
 }

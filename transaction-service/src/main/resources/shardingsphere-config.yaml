@@ -1,28 +1,27 @@
-
 dataSources:
   ds_0:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: org.postgresql.Driver
-    jdbcUrl: jdbc:postgresql://localhost:5435/transaction
-    username: postgres
-    password: postgres
+    jdbcUrl: %s
+    username: %s
+    password: %s
     connectionTimeout: 30000
-    maximumPoolSize: 10
+    maximumPoolSize: 5
   ds_1:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: org.postgresql.Driver
-    jdbcUrl: jdbc:postgresql://localhost:5436/transaction
-    username: postgres
-    password: postgres
+    jdbcUrl: %s
+    username: %s
+    password: %s
     connectionTimeout: 30000
-    maximumPoolSize: 10
+    maximumPoolSize: 5
 
 rules:
   - !SHARDING
     tables:
       transactions:
         actualDataNodes: ds_${0..1}.transactions
-        tableStrategy:
+        databaseStrategy:
           standard:
             shardingColumn: user_uid
             shardingAlgorithmName: user_uid_hash
@@ -31,7 +30,7 @@ rules:
           keyGeneratorName: uuid
       wallets:
         actualDataNodes: ds_${0..1}.wallets
-        tableStrategy:
+        databaseStrategy:
           standard:
             shardingColumn: user_uid
             shardingAlgorithmName: user_uid_hash
@@ -39,18 +38,19 @@ rules:
           column: uid
           keyGeneratorName: uuid
 
-    broadcastTables:
-      - wallet_types
-
     shardingAlgorithms:
       user_uid_hash:
-        type: HASH_MOD
+        type: INLINE
         props:
-          sharding-count: 2
+          algorithm-expression: "ds_${Math.abs(user_uid.hashCode()) % 2}"
 
     keyGenerators:
       uuid:
         type: UUID
+
+  - !BROADCAST
+    tables:
+      - wallet_types
 
 props:
   sql-show: true

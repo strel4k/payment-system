@@ -1,4 +1,4 @@
-package com.example.transaction;
+package com.example.transaction.it;
 
 import com.example.transaction.dto.CreateWalletRequest;
 import com.example.transaction.dto.TransactionConfirmRequest;
