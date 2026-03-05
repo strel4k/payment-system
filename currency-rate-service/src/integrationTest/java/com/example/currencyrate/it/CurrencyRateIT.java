@@ -174,8 +174,6 @@ class CurrencyRateIT {
                 "RUB", new BigDecimal("88.5")
         ));
 
-        // Trigger via scheduler service directly — inject it
-        // This verifies the full DB round-trip
         mockMvc.perform(get("/api/v1/rates")
                         .param("from", "USD")
                         .param("to", "EUR")
