@@ -19,6 +19,9 @@ services:
 
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
+      KC_HOSTNAME: individuals-keycloak
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
     volumes:
       - ./infrastructure/keycloak/realm-config.json:/opt/keycloak/data/import/realm-config.json:ro
     depends_on:
@@ -26,7 +29,7 @@ services:
         condition: service_healthy
 
   keycloak-postgres:
-    image: postgres:17
+    image: postgres:16-alpine
     container_name: keycloak-postgres
     environment:
       POSTGRES_DB: keycloak
@@ -92,6 +95,61 @@ services:
       timeout: 3s
       retries: 20
 
+  # ==================== CURRENCY RATE SERVICE ====================
+
+  currency-rate-service:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: currency-rate-service/Dockerfile
+    container_name: currency-rate-service
+    environment:
+      SERVER_PORT: "8085"
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://currency-postgres:5432/currency
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      EXCHANGE_RATE_API_KEY: ${EXCHANGE_RATE_API_KEY:-demo}
+      RATE_UPDATE_INTERVAL_MS: ${RATE_UPDATE_INTERVAL_MS:-3600000}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: currency-rate-service
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8085/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+    depends_on:
+      currency-postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+
+  currency-postgres:
+    image: postgres:16-alpine
+    container_name: currency-postgres
+    environment:
+      POSTGRES_DB: currency
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5436:5432"
+    volumes:
+      - currency_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d currency"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
   individuals-api:
     labels:
       - "env=dev"
@@ -120,6 +178,8 @@ services:
       KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       PERSON_SERVICE_BASE_URL: ${PERSON_SERVICE_BASE_URL:-http://person-service:8082}
+      CURRENCY_RATE_SERVICE_BASE_URL: ${CURRENCY_RATE_SERVICE_BASE_URL:-http://currency-rate-service:8085}
+      TRANSACTION_SERVICE_BASE_URL: http://transaction-service:8083
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_SERVICE_NAME: individuals-api
@@ -134,6 +194,8 @@ services:
       prometheus:
         condition: service_healthy
       loki:
+        condition: service_healthy
+      currency-rate-service:
         condition: service_healthy
 
   prometheus:
@@ -429,6 +491,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  currency_postgres_data:
   person_postgres_data:
   transaction_postgres_data:
   transaction_postgres_0_data:

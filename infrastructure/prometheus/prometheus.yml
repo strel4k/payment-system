@@ -63,6 +63,12 @@ scrape_configs:
     static_configs:
       - targets: ["transaction-service:8083"]
 
+
+  - job_name: "currency-rate-service"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["currency-rate-service:8085"]
+
   # ==================== AUTH ====================
 
   - job_name: "keycloak"

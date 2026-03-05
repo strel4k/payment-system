@@ -62,3 +62,7 @@ hs_err_pid*
 # Generated sources (regenerated on build)
 **/generated-sources/
 **/generated/
+
+HELP.md
+META-INF/
+com/*.class

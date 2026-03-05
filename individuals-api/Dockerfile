@@ -1,28 +1,3 @@
-FROM eclipse-temurin:17-jdk-alpine AS build
-
-ARG NEXUS_URL=http://host.docker.internal:8091/repository/maven-releases/
-ARG NEXUS_USERNAME=admin
-ARG NEXUS_PASSWORD=admin123
-
-ENV NEXUS_URL=${NEXUS_URL}
-ENV NEXUS_USERNAME=${NEXUS_USERNAME}
-ENV NEXUS_PASSWORD=${NEXUS_PASSWORD}
-
-WORKDIR /home/gradle/project
-
-COPY gradlew gradlew.bat* ./
-COPY gradle/ gradle/
-RUN chmod +x ./gradlew
-
-COPY settings.gradle.kts build.gradle.kts ./
-COPY gradle.properties* ./
-
-COPY person-service/ person-service/
-COPY transaction-service/ transaction-service/
-COPY individuals-api/ individuals-api/
-
-RUN ./gradlew --no-daemon :individuals-api:bootJar -x test
-
 FROM eclipse-temurin:17-jre-alpine
 
 RUN apk add --no-cache curl
@@ -35,7 +10,7 @@ RUN addgroup -g 1001 -S appgroup && \
 ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.10.0/opentelemetry-javaagent.jar /app/opentelemetry-javaagent.jar
 RUN chmod 644 /app/opentelemetry-javaagent.jar
 
-COPY --from=build /home/gradle/project/individuals-api/build/libs/*.jar app.jar
+COPY individuals-api/build/libs/*.jar app.jar
 
 RUN chown -R appuser:appgroup /app
 USER appuser

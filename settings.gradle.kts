@@ -15,5 +15,7 @@ include(
     "person-service",
     "person-service:person-service-api-client",
     "transaction-service",
-    "transaction-service:transaction-service-api-client"
+    "transaction-service:transaction-service-api-client",
+    "currency-rate-service",
+    "currency-rate-service:currency-rate-service-api-client"
 )

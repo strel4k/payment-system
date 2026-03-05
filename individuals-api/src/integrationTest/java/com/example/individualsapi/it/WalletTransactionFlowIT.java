@@ -9,8 +9,10 @@ import com.example.dto.transaction.TransactionInitRequest;
 import com.example.dto.transaction.TransactionInitResponse;
 import com.example.dto.transaction.TransactionStatusResponse;
 import com.example.dto.transaction.WalletResponse;
+import com.example.individualsapi.client.CurrencyRateServiceClient;
 import com.example.individualsapi.client.PersonServiceClient;
 import com.example.individualsapi.client.TransactionServiceClient;
+import com.example.individualsapi.client.dto.currencyrate.RateResponse;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -101,12 +103,16 @@ class WalletTransactionFlowIT {
     @MockBean
     private TransactionServiceClient transactionServiceClient;
 
+    @MockBean
+    private CurrencyRateServiceClient currencyRateServiceClient;
+
     // ── Константы ─────────
 
-    private static final UUID WALLET_UID  = UUID.fromString("aaaaaaaa-0000-0000-0000-000000000001");
-    private static final UUID WALLET_TYPE = UUID.fromString("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11");
-    private static final UUID REQUEST_UID = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000002");
-    private static final UUID TX_UID      = UUID.fromString("cccccccc-0000-0000-0000-000000000003");
+    private static final UUID WALLET_UID    = UUID.fromString("aaaaaaaa-0000-0000-0000-000000000001");
+    private static final UUID TARGET_WALLET = UUID.fromString("aaaaaaaa-0000-0000-0000-000000000002");
+    private static final UUID WALLET_TYPE   = UUID.fromString("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11");
+    private static final UUID REQUEST_UID   = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000002");
+    private static final UUID TX_UID        = UUID.fromString("cccccccc-0000-0000-0000-000000000003");
 
     // ── Хелперы ──────────
 
@@ -135,13 +141,30 @@ class WalletTransactionFlowIT {
     }
 
     private WalletResponse walletStub(UUID userUid) {
+        return walletStub(userUid, "USD");
+    }
+
+    private WalletResponse walletStub(UUID userUid, String currency) {
         WalletResponse r = new WalletResponse();
         r.setUid(WALLET_UID);
         r.setUserUid(userUid);
         r.setWalletTypeUid(WALLET_TYPE);
-        r.setName("USD Wallet");
+        r.setName(currency + " Wallet");
         r.setStatus(WalletResponse.StatusEnum.ACTIVE);
         r.setBalance(BigDecimal.ZERO);
+        r.setCurrencyCode(currency);
+        return r;
+    }
+
+    private WalletResponse targetWalletStub(UUID userUid, String currency) {
+        WalletResponse r = new WalletResponse();
+        r.setUid(TARGET_WALLET);
+        r.setUserUid(userUid);
+        r.setWalletTypeUid(WALLET_TYPE);
+        r.setName(currency + " Wallet");
+        r.setStatus(WalletResponse.StatusEnum.ACTIVE);
+        r.setBalance(BigDecimal.ZERO);
+        r.setCurrencyCode(currency);
         return r;
     }
 
@@ -164,13 +187,20 @@ class WalletTransactionFlowIT {
         return r;
     }
 
-
     private TransactionStatusResponse statusStub() {
         TransactionStatusResponse r = new TransactionStatusResponse();
         r.setUid(TX_UID);
         r.setStatus(TransactionStatusResponse.StatusEnum.COMPLETED);
         r.setType(TransactionStatusResponse.TypeEnum.DEPOSIT);
         r.setAmount(BigDecimal.valueOf(100));
+        return r;
+    }
+
+    private RateResponse rateStub(String from, String to) {
+        RateResponse r = new RateResponse();
+        r.setFromCurrency(from);
+        r.setToCurrency(to);
+        r.setRate(BigDecimal.valueOf(0.85));
         return r;
     }
 
@@ -396,10 +426,16 @@ class WalletTransactionFlowIT {
         }
 
         @Test
-        @DisplayName("Transfer init → 200")
-        void initTransfer_returns200() {
+        @DisplayName("Transfer init (same currency) → 200")
+        void initTransfer_sameCurrency_returns200() {
             String token = registerAndGetToken();
+            UUID userUid = UUID.randomUUID();
 
+            // Both wallets return USD
+            when(transactionServiceClient.getWallet(eq(WALLET_UID), anyString()))
+                    .thenReturn(Mono.just(walletStub(userUid, "USD")));
+            when(transactionServiceClient.getWallet(eq(TARGET_WALLET), anyString()))
+                    .thenReturn(Mono.just(targetWalletStub(userUid, "USD")));
             when(transactionServiceClient.initTransaction(eq("transfer"), any(), anyString()))
                     .thenReturn(Mono.just(initStub()));
 
@@ -409,7 +445,34 @@ class WalletTransactionFlowIT {
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue("""
                             {"walletUid":"%s","targetWalletUid":"%s","amount":50.00}
-                            """.formatted(WALLET_UID, UUID.randomUUID()))
+                            """.formatted(WALLET_UID, TARGET_WALLET))
+                    .exchange()
+                    .expectStatus().isOk();
+        }
+
+        @Test
+        @DisplayName("Transfer init (cross-currency USD→EUR) → 200 с fetch курса")
+        void initTransfer_crossCurrency_returns200() {
+            String token = registerAndGetToken();
+            UUID userUid = UUID.randomUUID();
+
+            // Source wallet = USD, target wallet = EUR
+            when(transactionServiceClient.getWallet(eq(WALLET_UID), anyString()))
+                    .thenReturn(Mono.just(walletStub(userUid, "USD")));
+            when(transactionServiceClient.getWallet(eq(TARGET_WALLET), anyString()))
+                    .thenReturn(Mono.just(targetWalletStub(userUid, "EUR")));
+            when(currencyRateServiceClient.getRate(eq("USD"), eq("EUR")))
+                    .thenReturn(Mono.just(rateStub("USD", "EUR")));
+            when(transactionServiceClient.initTransaction(eq("transfer"), any(), anyString()))
+                    .thenReturn(Mono.just(initStub()));
+
+            webTestClient.post()
+                    .uri("/v1/transactions/transfer/init")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""
+                            {"walletUid":"%s","targetWalletUid":"%s","amount":50.00}
+                            """.formatted(WALLET_UID, TARGET_WALLET))
                     .exchange()
                     .expectStatus().isOk();
         }

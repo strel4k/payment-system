@@ -17,4 +17,5 @@ public class TransactionInitRequest {
     private UUID targetWalletUid;
     private BigDecimal amount;
     private Long paymentMethodId;
+    private BigDecimal exchangeRate;
 }

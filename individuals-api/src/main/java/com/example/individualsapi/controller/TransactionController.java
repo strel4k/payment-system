@@ -1,8 +1,14 @@
 package com.example.individualsapi.controller;
 
 import com.example.individualsapi.client.TransactionServiceClient;
-import com.example.dto.transaction.*;
+import com.example.individualsapi.service.TransferService;
+import com.example.dto.transaction.TransactionInitRequest;
+import com.example.dto.transaction.TransactionInitResponse;
+import com.example.dto.transaction.TransactionConfirmRequest;
+import com.example.dto.transaction.TransactionConfirmResponse;
+import com.example.dto.transaction.TransactionStatusResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -11,12 +17,14 @@ import reactor.core.publisher.Mono;
 
 import java.util.UUID;
 
+@Slf4j
 @RestController
 @RequestMapping(path = "/v1/transactions", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class TransactionController {
 
     private final TransactionServiceClient transactionServiceClient;
+    private final TransferService transferService;
 
     @PostMapping(value = "/{type}/init", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<TransactionInitResponse> initTransaction(
@@ -24,6 +32,12 @@ public class TransactionController {
             @RequestBody TransactionInitRequest request,
             ServerWebExchange exchange) {
         String authToken = getAuthToken(exchange);
+
+        // Transfer gets special handling — currency check + rate fetch if needed
+        if ("transfer".equalsIgnoreCase(type)) {
+            return transferService.initTransfer(request, authToken);
+        }
+
         return transactionServiceClient.initTransaction(type, request, authToken);
     }
 

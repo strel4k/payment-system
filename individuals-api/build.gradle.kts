@@ -34,13 +34,20 @@ repositories {
     }
 }
 
+dependencyManagement {
+    imports {
+        mavenBom("org.springframework.cloud:spring-cloud-dependencies:2025.0.0")
+    }
+}
+
 dependencies {
 
     val lombokVersion = "1.18.42"
 
-    // Person & Transaction Service clients from Nexus
+    // Person,Transaction & Currency service clients from Nexus
     implementation("com.example:person-service-api-client:1.0.0")
     implementation("com.example:transaction-service-api-client:1.0.0")
+    implementation("com.example:currency-rate-service-api-client:1.0.0")
 
     // --- runtime ---
     implementation("org.springframework.boot:spring-boot-starter-webflux")
@@ -49,6 +56,9 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+
+    // OpenFeign
+    implementation("org.springframework.cloud:spring-cloud-starter-openfeign")
 
     // micrometer + prometheus
     implementation("io.micrometer:micrometer-registry-prometheus")
@@ -90,7 +100,6 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
-//    enabled = false
 }
 
 val integrationTestSourceSet = sourceSets.create("integrationTest") {
@@ -150,7 +159,8 @@ jacoco {
 }
 
 tasks.jacocoTestReport {
-    dependsOn(tasks.test)
+    dependsOn(tasks.test, tasks.named("integrationTest"))
+    executionData.setFrom(fileTree(layout.buildDirectory).include("jacoco/*.exec"))
 
     reports {
         xml.required.set(true)
@@ -180,6 +190,7 @@ tasks.jacocoTestReport {
 }
 
 tasks.jacocoTestCoverageVerification {
+    executionData.setFrom(fileTree(layout.buildDirectory).include("jacoco/*.exec"))
     dependsOn(tasks.jacocoTestReport)
 
     violationRules {
