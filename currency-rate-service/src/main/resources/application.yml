@@ -4,13 +4,11 @@ server:
 spring:
   application:
     name: currency-rate-service
-
   datasource:
-    url: jdbc:postgresql://localhost:5436/currency
-    username: postgres
-    password: postgres
+    url: ${DB_URL:jdbc:postgresql://localhost:5436/currency}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
-
   jpa:
     hibernate:
       ddl-auto: validate
@@ -19,7 +17,6 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
-
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -39,12 +36,12 @@ management:
   tracing:
     enabled: true
 
-# External rate provider
 exchange-rate:
   api-key: ${EXCHANGE_RATE_API_KEY:demo}
   base-url: ${EXCHANGE_RATE_BASE_URL:https://v6.exchangerate-api.com}
   base-currency: USD
   update-interval-ms: ${RATE_UPDATE_INTERVAL_MS:3600000}
+  rate-ttl-hours: ${RATE_TTL_HOURS:2}
   lock-at-most-for: PT10M
   lock-at-least-for: PT5M
 
@@ -60,21 +57,18 @@ spring:
   config:
     activate:
       on-profile: docker
-
   datasource:
     url: jdbc:postgresql://currency-postgres:5432/currency
-    username: postgres
-    password: postgres
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
 
 ---
 spring:
   config:
     activate:
       on-profile: test
-
   jpa:
     hibernate:
       ddl-auto: create-drop
-
   flyway:
     enabled: false

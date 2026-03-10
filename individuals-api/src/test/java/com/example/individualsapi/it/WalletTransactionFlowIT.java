@@ -2,10 +2,7 @@ package com.example.individualsapi.it;
 
 import com.example.dto.TokenResponse;
 import com.example.dto.person.PersonResponse;
-import com.example.dto.transaction.CreateWalletRequest;
-import com.example.dto.transaction.TransactionConfirmRequest;
 import com.example.dto.transaction.TransactionConfirmResponse;
-import com.example.dto.transaction.TransactionInitRequest;
 import com.example.dto.transaction.TransactionInitResponse;
 import com.example.dto.transaction.TransactionStatusResponse;
 import com.example.dto.transaction.WalletResponse;

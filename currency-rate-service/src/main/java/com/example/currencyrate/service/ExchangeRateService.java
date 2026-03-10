@@ -30,13 +30,13 @@ import java.util.Map;
 public class ExchangeRateService {
 
     private static final MathContext MC = new MathContext(18, RoundingMode.HALF_UP);
-    private static final int RATE_TTL_HOURS = 2;
 
     private final ExternalRateProviderClient externalClient;
     private final CurrencyRepository currencyRepository;
     private final RateProviderRepository rateProviderRepository;
     private final ConversionRateRepository conversionRateRepository;
     private final RateCorrectionFactorRepository correctionFactorRepository;
+    private final RatePersistenceService ratePersistenceService;
     private final ExchangeRateProperties props;
 
     // ==================== Public API ====================
@@ -63,7 +63,6 @@ public class ExchangeRateService {
                 .orElseThrow(() -> new RateNotFoundException(sourceCode, destinationCode));
     }
 
-    @Transactional
     public void updateRates() {
         log.info("Starting rate update...");
 
@@ -85,7 +84,7 @@ public class ExchangeRateService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime endTime = now.plusHours(RATE_TTL_HOURS);
+        LocalDateTime endTime = now.plusHours(props.getRateTtlHours());
         int savedCount = 0;
 
         for (Currency source : currencies) {
@@ -103,24 +102,13 @@ public class ExchangeRateService {
 
                 // cross-rate: rate(A->B) = USD->B / USD->A
                 BigDecimal crossRate = usdToDestination.divide(usdToSource, MC);
-
-                // Apply correction factor if configured for this pair
                 BigDecimal finalRate = applyCorrectionFactor(
                         source.getCode(), destination.getCode(), crossRate);
 
-                // Expire current active rate
-                conversionRateRepository.expireActiveRates(
-                        source.getCode(), destination.getCode(), now);
-
-                // Save new rate with correction applied
-                conversionRateRepository.save(ConversionRate.builder()
-                        .sourceCode(source.getCode())
-                        .destinationCode(destination.getCode())
-                        .rate(finalRate)
-                        .rateBeginTime(now)
-                        .rateEndTime(endTime)
-                        .providerCode(provider.getProviderCode())
-                        .build());
+                ratePersistenceService.savePair(
+                        source.getCode(), destination.getCode(),
+                        finalRate, now, endTime,
+                        provider.getProviderCode());
 
                 savedCount++;
             }
@@ -167,7 +155,7 @@ public class ExchangeRateService {
                 .destinationCode(code)
                 .rate(BigDecimal.ONE)
                 .rateBeginTime(at)
-                .rateEndTime(at.plusHours(RATE_TTL_HOURS))
+                .rateEndTime(at.plusHours(props.getRateTtlHours()))
                 .providerCode("IDENTITY")
                 .build();
     }

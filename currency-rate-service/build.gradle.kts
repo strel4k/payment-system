@@ -71,6 +71,7 @@ dependencies {
     testImplementation("org.testcontainers:junit-jupiter:1.20.2")
     testImplementation("org.testcontainers:postgresql:1.20.2")
     testImplementation("io.projectreactor:reactor-test")
+    testImplementation("org.wiremock:wiremock-standalone:3.10.0")
 }
 
 tasks.withType<Test> {

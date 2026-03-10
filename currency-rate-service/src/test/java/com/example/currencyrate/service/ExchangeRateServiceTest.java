@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,6 +38,7 @@ class ExchangeRateServiceTest {
     @Mock ConversionRateRepository conversionRateRepository;
     @Mock RateCorrectionFactorRepository correctionFactorRepository;
     @Mock ExternalRateProviderClient externalClient;
+    @Mock RatePersistenceService ratePersistenceService;
     @Mock ExchangeRateProperties props;
 
     @InjectMocks
@@ -51,6 +53,8 @@ class ExchangeRateServiceTest {
         usd = new Currency(1L, "USD", "USD", "US Dollar", "$", true);
         eur = new Currency(2L, "EUR", "EUR", "Euro", "€", true);
         rub = new Currency(3L, "RUB", "RUB", "Russian Ruble", "₽", true);
+
+        lenient().when(props.getRateTtlHours()).thenReturn(2);
     }
 
     // ==================== getRate ====================
@@ -146,14 +150,12 @@ class ExchangeRateServiceTest {
         ));
         when(correctionFactorRepository.findBySourceCodeAndDestinationCodeAndActiveTrue(anyString(), anyString()))
                 .thenReturn(Optional.empty());
-        when(conversionRateRepository.expireActiveRates(anyString(), anyString(), any())).thenReturn(1);
-        when(conversionRateRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.updateRates();
 
         // 3 currencies - 3×2 = 6 pairs
-        verify(conversionRateRepository, times(6)).save(any(ConversionRate.class));
-        verify(conversionRateRepository, times(6)).expireActiveRates(anyString(), anyString(), any());
+        verify(ratePersistenceService, times(6))
+                .savePair(anyString(), anyString(), any(), any(), any(), anyString());
     }
 
     @Test
@@ -168,27 +170,29 @@ class ExchangeRateServiceTest {
         ));
         when(correctionFactorRepository.findBySourceCodeAndDestinationCodeAndActiveTrue(anyString(), anyString()))
                 .thenReturn(Optional.empty());
-        when(conversionRateRepository.expireActiveRates(anyString(), anyString(), any())).thenReturn(1);
-        when(conversionRateRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.updateRates();
 
-        var savedRates = org.mockito.ArgumentCaptor.forClass(ConversionRate.class);
-        verify(conversionRateRepository, times(2)).save(savedRates.capture());
+        var sourceCaptor = ArgumentCaptor.forClass(String.class);
+        var destCaptor = ArgumentCaptor.forClass(String.class);
+        var rateCaptor = ArgumentCaptor.forClass(BigDecimal.class);
+        var beginCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        var endCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        var providerCaptor = ArgumentCaptor.forClass(String.class);
 
-        ConversionRate usdToEur = savedRates.getAllValues().stream()
-                .filter(r -> r.getSourceCode().equals("USD") && r.getDestinationCode().equals("EUR"))
-                .findFirst().orElseThrow();
+        verify(ratePersistenceService, times(2)).savePair(
+                sourceCaptor.capture(), destCaptor.capture(),
+                rateCaptor.capture(), beginCaptor.capture(),
+                endCaptor.capture(), providerCaptor.capture());
 
-        // USD→EUR = EUR_rate / USD_rate = 0.92 / 1.0 = 0.92
-        assertThat(usdToEur.getRate()).isEqualByComparingTo("0.92");
+        // Find USD→EUR rate
+        int usdToEurIdx = destCaptor.getAllValues().indexOf("EUR");
+        assertThat(rateCaptor.getAllValues().get(usdToEurIdx)).isEqualByComparingTo("0.92");
 
-        ConversionRate eurToUsd = savedRates.getAllValues().stream()
-                .filter(r -> r.getSourceCode().equals("EUR") && r.getDestinationCode().equals("USD"))
-                .findFirst().orElseThrow();
-
-        // EUR→USD = 1.0 / 0.92 = 1.0869...
-        assertThat(eurToUsd.getRate()).isGreaterThan(new BigDecimal("1.08"))
+        // Find EUR→USD rate = 1.0869
+        int eurToUsdIdx = destCaptor.getAllValues().indexOf("USD");
+        assertThat(rateCaptor.getAllValues().get(eurToUsdIdx))
+                .isGreaterThan(new BigDecimal("1.08"))
                 .isLessThan(new BigDecimal("1.09"));
     }
 
@@ -211,18 +215,16 @@ class ExchangeRateServiceTest {
         when(currencyRepository.findAllByActiveTrue()).thenReturn(List.of(usd, eur, rub));
         when(rateProviderRepository.findAllByActiveTrueOrderByPriorityAsc())
                 .thenReturn(List.of(provider));
-        // RUB is missing from API response
         when(externalClient.fetchBaseRates()).thenReturn(Map.of(
                 "USD", new BigDecimal("1.0"),
                 "EUR", new BigDecimal("0.92")
         ));
         when(correctionFactorRepository.findBySourceCodeAndDestinationCodeAndActiveTrue(anyString(), anyString()))
                 .thenReturn(Optional.empty());
-        when(conversionRateRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.updateRates();
 
-        // Only USD<->EUR pairs (2), RUB pairs skipped
-        verify(conversionRateRepository, times(2)).save(any(ConversionRate.class));
+        verify(ratePersistenceService, times(2))
+                .savePair(anyString(), anyString(), any(), any(), any(), anyString());
     }
 }
