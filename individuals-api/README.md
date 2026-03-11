@@ -1,28 +1,25 @@
-# Payment System — Microservices Architecture
+# Individuals API
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![Java](https://img.shields.io/badge/Java-17-orange)]()
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.0-green)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
-Полнофункциональная микросервисная платёжная система с **wallet management**, **transaction processing**, **event-driven architecture**, **distributed tracing** и **observability stack**.
+Оркестратор платёжной системы — единая точка входа для всех клиентских запросов. Проксирует вызовы к person-service, transaction-service и currency-rate-service.
 
 ---
 
 ## 🎯 Возможности
 
-- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service
-- ✅ **Wallet Management** — создание и управление кошельками пользователей
+- ✅ **Единая точка входа** — все внешние запросы только через individuals-api
+- ✅ **Authentication & Authorization** — регистрация, логин, refresh через Keycloak
+- ✅ **Wallet Management** — создание и получение кошельков (proxy → transaction-service)
 - ✅ **Transaction Processing** — deposit, withdrawal, transfer с двухфазным подтверждением
-- ✅ **Event-Driven Architecture** — Apache Kafka для асинхронных операций
-- ✅ **OAuth2/JWT аутентификация** — интеграция с Keycloak
+- ✅ **Cross-Currency Transfer** — автоматический fetch курса при разных валютах кошельков
+- ✅ **OpenFeign** — декларативный HTTP-клиент к currency-rate-service
+- ✅ **OAuth2/JWT** — интеграция с Keycloak (Resource Server)
 - ✅ **Distributed Tracing** — OpenTelemetry + Grafana Tempo
-- ✅ **Full Observability** — Prometheus (метрики) + Loki (логи) + Grafana (визуализация)
-- ✅ **Artifact Management** — Nexus OSS для Maven артефактов (person-service-api-client, transaction-service-api-client)
-- ✅ **Database Audit** — Hibernate Envers для отслеживания изменений
+- ✅ **Full Observability** — Prometheus метрики, JSON логи в Loki
 - ✅ **OpenAPI Specification** — автогенерация DTO из YAML
-- ✅ **Database Sharding** — Apache ShardingSphere JDBC (optional profile)
-- ✅ **Comprehensive Testing** — unit & integration тесты, 80%+ покрытие бизнес-логики
 
 ---
 
@@ -30,20 +27,21 @@
 
 | Документ | Описание |
 |----------|----------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Архитектурные решения, паттерны, стек |
-| [transaction-service/README.md](transaction-service/README.md) | Transaction Service API и архитектура |
-| [docs/TEST_COVERAGE_REPORT.md](docs/TEST_COVERAGE_REPORT.md) | Отчёт о покрытии тестами |
+| [../README.md](../README.md) | Корневая документация проекта |
+| [../transaction-service/README.md](../transaction-service/README.md) | Transaction Service |
+| [../currency-rate-service/README.md](../currency-rate-service/README.md) | Currency Rate Service |
+| [../docs/TEST_COVERAGE_REPORT.md](../docs/TEST_COVERAGE_REPORT.md) | Отчёт о покрытии тестами |
 
 ### Диаграммы (PlantUML)
 
 | Диаграмма | Описание |
 |-----------|----------|
-| [docs/architecture/diagrams/context.puml](docs/architecture/diagrams/context.puml) | C4 Context Diagram |
-| [docs/architecture/diagrams/container.puml](docs/architecture/diagrams/container.puml) | C4 Container Diagram |
-| [docs/architecture/diagrams/sequence-registration.puml](docs/architecture/diagrams/sequence-registration.puml) | User Registration Flow |
-| [docs/architecture/diagrams/sequence-deposit.puml](docs/architecture/diagrams/sequence-deposit.puml) | Deposit Flow (async Kafka) |
-| [docs/architecture/diagrams/sequence-withdrawal.puml](docs/architecture/diagrams/sequence-withdrawal.puml) | Withdrawal Flow (semi-sync + compensating) |
-| [docs/architecture/diagrams/sequence-transfer.puml](docs/architecture/diagrams/sequence-transfer.puml) | Transfer Flow (sync atomic) |
+| [docs/architecture/diagrams/context.puml](../docs/architecture/diagrams/context.puml) | C4 Context Diagram |
+| [docs/architecture/diagrams/container.puml](../docs/architecture/diagrams/container.puml) | C4 Container Diagram |
+| [docs/architecture/diagrams/sequence-registration.puml](../docs/architecture/diagrams/sequence-registration.puml) | User Registration Flow |
+| [docs/architecture/diagrams/sequence-deposit.puml](../docs/architecture/diagrams/sequence-deposit.puml) | Deposit Flow (async Kafka) |
+| [docs/architecture/diagrams/sequence-withdrawal.puml](../docs/architecture/diagrams/sequence-withdrawal.puml) | Withdrawal Flow (semi-sync + compensating) |
+| [docs/architecture/diagrams/sequence-transfer.puml](../docs/architecture/diagrams/sequence-transfer.puml) | Transfer Flow (sync atomic) |
 
 ---
 
@@ -60,43 +58,27 @@
 │              Orchestrator, WebFlux, Stateless               │
 │ • Authentication & Registration (Keycloak)                  │
 │ • Proxy to Person Service & Transaction Service             │
+│ • Currency rate fetch via OpenFeign (currency-rate-service) │
 │ • person-service-api-client + transaction-service-api-client│
-└────┬──────────────────┬──────────────────┬──────────────────┘
-     │                  │                  │
-     ▼                  ▼                  ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│   Person     │  │ Transaction  │  │   Keycloak   │
-│   Service    │  │   Service    │  │   (8080)     │
-│   (8082)     │  │   (8083)     │  └──────┬───────┘
-└──────┬───────┘  └──────┬───────┘         │
-       │                 │          ┌──────┴───────┐
-       ▼                 ▼          │ Keycloak DB  │
-┌──────────────┐  ┌──────────────┐  │ Postgres:5433│
-│  Person DB   │  │Transaction DB│  └──────────────┘
-│ Postgres:5434│  │ Postgres:5435│
-└──────────────┘  └──────┬───────┘
-                         │
-                  ┌──────▼───────┐
-                  │    Kafka     │
-                  │ 9092/29092   │
-                  └──────┬───────┘
-                         │
-               ┌─────────▼──────────┐
-               │   Kafka Exporter   │
-               │      :9308         │
-               └─────────┬──────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────┐
-│                 Observability Stack                         │
-│  Prometheus:9090 │ Grafana:3000 │ Loki:3100 │ Tempo:3200    │
-│                  Promtail (log shipper)                     │
-└─────────────────────────────────────────────────────────────┘
-
-                  ┌──────────────┐
-                  │  Nexus OSS   │
-                  │    :8091     │
-                  │ Maven repo   │
-                  └──────────────┘
+└────┬──────────────┬──────────────┬──────────────┬───────────┘
+     │              │              │              │
+     ▼              ▼              ▼              ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────┐ ┌──────────────┐
+│   Person     │ │ Transaction  │ │ Keycloak │ │Currency Rate │
+│   Service    │ │   Service    │ │  (8080)  │ │   Service    │
+│   (8082)     │ │   (8083)     │ └──────────┘ │   (8085)     │
+└──────┬───────┘ └──────┬───────┘              └──────┬───────┘
+       │                │                             │
+       ▼                ▼                             ▼
+┌──────────────┐ ┌──────────────┐             ┌──────────────┐
+│  Person DB   │ │Transaction DB│             │ Currency DB  │
+│ Postgres:5434│ │ Postgres:5435│             │ Postgres:5436│
+└──────────────┘ └──────┬───────┘             └──────────────┘
+                        │
+                 ┌──────▼───────┐
+                 │    Kafka     │
+                 │  9092/29092  │
+                 └──────────────┘
 ```
 
 ---
@@ -105,15 +87,15 @@
 
 ### Требования
 - Docker & Docker Compose
-- JDK 17+ (для локальной разработки)
+- JDK 17+
 
 ### 1. Запуск всех сервисов
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-Первый запуск занимает ~10-12 минут (JVM + OTel агент + Kafka).
+Первый запуск занимает ~10-15 минут (JVM + OTel агент + Kafka).
 
 ### 2. Проверка статуса
 
@@ -121,14 +103,13 @@ docker-compose up -d
 docker ps --format "table {{.Names}}\t{{.Status}}"
 ```
 
-Все сервисы должны быть `(healthy)`.
-
 ### 3. Smoke test
 
 ```bash
-curl http://localhost:8081/actuator/health   # individuals-api
-curl http://localhost:8082/actuator/health   # person-service
-curl http://localhost:8083/actuator/health   # transaction-service
+curl http://localhost:8081/actuator/health
+curl http://localhost:8082/actuator/health
+curl http://localhost:8083/actuator/health
+curl http://localhost:8085/actuator/health
 ```
 
 ---
@@ -140,6 +121,7 @@ curl http://localhost:8083/actuator/health   # transaction-service
 | **Individuals API** | http://localhost:8081 | — | Orchestrator (auth, wallets, transactions) |
 | **Person Service** | http://localhost:8082 | — | User Data Management (internal) |
 | **Transaction Service** | http://localhost:8083 | — | Wallets & Transactions (internal) |
+| **Currency Rate Service** | http://localhost:8085 | — | Exchange rates (internal) |
 | **Keycloak** | http://localhost:8080 | admin/admin | Identity Provider |
 | **Nexus OSS** | http://localhost:8091 | admin/admin123 | Maven Repository |
 | **Grafana** | http://localhost:3000 | admin/admin | Dashboards |
@@ -148,7 +130,7 @@ curl http://localhost:8083/actuator/health   # transaction-service
 
 ---
 
-## 💳 API — Individuals API (Orchestrator)
+## 💳 API
 
 ### Authentication
 ```bash
@@ -182,6 +164,43 @@ GET  /v1/transactions/{uid}/status     # Get status
 
 ---
 
+## 🔗 OpenFeign — Currency Rate Client
+
+При cross-currency переводе individuals-api автоматически получает курс через **Spring Cloud OpenFeign**:
+
+```java
+@FeignClient(name = "currency-rate-service", url = "${currency-rate-service.base-url}")
+public interface CurrencyRateServiceFeignClient {
+
+    @GetMapping("/api/v1/rates")
+    RateResponse getRate(@RequestParam("from") String from,
+                         @RequestParam("to") String to);
+}
+```
+
+`CurrencyRateServiceClient` оборачивает синхронный Feign в реактивный `Mono.fromCallable()` на `boundedElastic` scheduler — это позволяет использовать блокирующий Feign в реактивном WebFlux контексте.
+
+### Transfer Flow с конвертацией валют
+
+```
+POST /v1/transactions/transfer/init
+  → TransferService.initTransfer()
+    → getWallet(sourceUid)           // USD wallet
+    → getWallet(targetUid)           // EUR wallet
+    → sourceCurrency != targetCurrency?
+        → CurrencyRateServiceFeignClient.getRate("USD", "EUR")  // 0.8542
+        → enrichedRequest с курсом
+    → TransactionServiceClient.initTransaction("transfer", request)
+```
+
+### Конфигурация
+```yaml
+currency-rate-service:
+  base-url: ${CURRENCY_RATE_SERVICE_BASE_URL:http://localhost:8085}
+```
+
+---
+
 ## 📊 Kafka Topics
 
 | Topic | Producer | Consumer | Purpose |
@@ -196,14 +215,12 @@ GET  /v1/transactions/{uid}/status     # Get status
 
 ## 📦 API Client Artifacts
 
-Каждый сервис публикует собственный API-клиент в Nexus:
-
 ```bash
-# Публикация
+# Публикация в локальный Maven
 ./gradlew :person-service:person-service-api-client:publishToMavenLocal
 ./gradlew :transaction-service:transaction-service-api-client:publishToMavenLocal
 
-# Или в Nexus (при запущенном Docker)
+# Публикация в Nexus (при запущенном Docker)
 ./gradlew :person-service:person-service-api-client:publish
 ./gradlew :transaction-service:transaction-service-api-client:publish
 ```
@@ -214,31 +231,30 @@ GET  /v1/transactions/{uid}/status     # Get status
 
 ```bash
 # Все тесты
-./gradlew test
-
-# По модулям
-./gradlew :person-service:test
 ./gradlew :individuals-api:test
-./gradlew :transaction-service:test
+
+# Интеграционные тесты
+./gradlew :individuals-api:integrationTest
 ```
 
 ---
 
 ## 🔧 Локальная разработка
 
-### Пересборка JAR и Docker образа одного сервиса
+### Пересборка без Docker build (быстро)
 
 ```bash
-./gradlew :individuals-api:bootJar
-docker-compose up -d --build individuals-api
+./gradlew :individuals-api:bootJar -x test
+docker cp individuals-api/build/libs/individuals-api-0.0.1-SNAPSHOT.jar individuals-api:/app/app.jar
+docker restart individuals-api
 ```
 
 ### Flyway и volumes
 
-При изменении уже применённых миграций необходимо пересоздать volumes:
 ```bash
-docker-compose down -v
-docker-compose up -d
+# При изменении миграций — пересоздать volumes
+docker compose down -v
+docker compose up -d
 ```
 
 > ⚠️ Никогда не редактируй уже применённые файлы миграций V1, V2 и т.д. — только добавляй новые.
@@ -250,23 +266,21 @@ docker-compose up -d
 ### Сервис не стартует
 ```bash
 docker logs individuals-api --tail 50
-docker logs transaction-service --tail 50
+```
+
+### Spring Cloud версия несовместима
+```yaml
+# В application.yml
+spring:
+  cloud:
+    compatibility-verifier:
+      enabled: false
 ```
 
 ### Kafka healthcheck
 ```bash
-# Kafka использует внутренний listener для healthcheck
 docker exec kafka kafka-topics --bootstrap-server localhost:29092 --list
 ```
-
-### Flyway checksum mismatch
-```bash
-# Пересоздать базы (удаляет все данные!)
-docker-compose down -v && docker-compose up -d
-```
-
-### Prometheus targets
-Открой http://localhost:9090/targets — все должны быть UP.
 
 ### Kafka consumer lag
 ```bash
@@ -274,6 +288,9 @@ docker exec kafka kafka-consumer-groups \
   --bootstrap-server localhost:29092 \
   --group transaction-service --describe
 ```
+
+### Prometheus targets
+Открой http://localhost:9090/targets — все должны быть UP.
 
 ### Grafana Kafka Dashboard
 Импортируй dashboard ID **7589** для kafka-exporter метрик.

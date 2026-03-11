@@ -1,0 +1,194 @@
+openapi: 3.0.3
+info:
+  title: Currency Rate Service API
+  description: Provides exchange rates between currencies with historical lookup support
+  version: 1.0.0
+
+servers:
+  - url: /api/v1
+
+paths:
+  /rates:
+    get:
+      summary: Получить курс между двумя валютами на указанную дату/время
+      operationId: getRate
+      tags:
+        - rates
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            example: USD
+          description: Код исходной валюты (например, "USD")
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            example: EUR
+          description: Код целевой валюты
+        - name: timestamp
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+            example: "2025-06-01T10:00:00Z"
+          description: Дата/время, на которую нужен курс (ISO 8601, UTC). Если не указано, возвращается последний актуальный курс.
+      responses:
+        "200":
+          description: Курс найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateResponse"
+        "400":
+          description: Ошибка запроса
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Курс не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /currencies:
+    get:
+      summary: Получить список поддерживаемых валют
+      operationId: getCurrencies
+      tags:
+        - currencies
+      responses:
+        "200":
+          description: Список валют
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CurrencyResponse"
+
+  /rate-providers:
+    get:
+      summary: Получить список провайдеров курсов валют
+      operationId: getRateProviders
+      tags:
+        - rate-providers
+      responses:
+        "200":
+          description: Провайдеры
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RateProviderResponse"
+
+  /health:
+    get:
+      summary: Health check
+      operationId: health
+      tags:
+        - health
+      responses:
+        "200":
+          description: Сервис работает
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+components:
+  schemas:
+    RateResponse:
+      type: object
+      required:
+        - fromCurrency
+        - toCurrency
+        - rate
+        - rateBeginTime
+      properties:
+        fromCurrency:
+          type: string
+          example: USD
+        toCurrency:
+          type: string
+          example: EUR
+        rate:
+          type: number
+          format: double
+          example: 0.9200
+        rateBeginTime:
+          type: string
+          format: date-time
+        rateEndTime:
+          type: string
+          format: date-time
+        providerCode:
+          type: string
+          example: EXR
+
+    CurrencyResponse:
+      type: object
+      required:
+        - code
+        - isoCode
+        - description
+      properties:
+        code:
+          type: string
+          example: USD
+        isoCode:
+          type: string
+          example: USD
+        description:
+          type: string
+          example: US Dollar
+        symbol:
+          type: string
+          example: "$"
+        active:
+          type: boolean
+          example: true
+
+    RateProviderResponse:
+      type: object
+      required:
+        - providerCode
+        - providerName
+      properties:
+        providerCode:
+          type: string
+          example: EXR
+        providerName:
+          type: string
+          example: ExchangeRate-API
+        priority:
+          type: integer
+          example: 1
+        active:
+          type: boolean
+          example: true
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: UP
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time

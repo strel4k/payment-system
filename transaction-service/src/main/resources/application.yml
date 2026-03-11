@@ -138,14 +138,12 @@ spring:
     activate:
       on-profile: sharding
 
-  # Disable default datasource - ShardingSphere will manage it
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
 
   # ShardingSphere configuration
   shardingsphere:
-    # Path to sharding rules configuration
     config-file: classpath:shardingsphere-config.yaml
 
   jpa:
@@ -153,11 +151,10 @@ spring:
       ddl-auto: none
     properties:
       hibernate:
-        # Use ShardingSphere's virtual dialect
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
   flyway:
-    enabled: false  # Migrations must be run on each shard separately
+    enabled: false
 
 logging:
   level:

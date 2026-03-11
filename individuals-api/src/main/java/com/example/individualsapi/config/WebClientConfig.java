@@ -34,4 +34,11 @@ public class WebClientConfig {
                 .exchangeStrategies(defaultStrategies())
                 .build();
     }
+
+    @Bean
+    public WebClient currencyRateServiceWebClient() {
+        return WebClient.builder()
+                .exchangeStrategies(defaultStrategies())
+                .build();
+    }
 }

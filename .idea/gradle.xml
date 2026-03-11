@@ -8,6 +8,8 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
+            <option value="$PROJECT_DIR$/currency-rate-service" />
+            <option value="$PROJECT_DIR$/currency-rate-service/currency-rate-service-api-client" />
             <option value="$PROJECT_DIR$/individuals-api" />
             <option value="$PROJECT_DIR$/person-service" />
             <option value="$PROJECT_DIR$/person-service/person-service-api-client" />

@@ -12,9 +12,11 @@
 
 ## 🎯 Возможности
 
-- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service
+- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service + currency-rate-service
 - ✅ **Wallet Management** — создание и управление кошельками пользователей
 - ✅ **Transaction Processing** — deposit, withdrawal, transfer с двухфазным подтверждением
+- ✅ **Currency Rate Service** — актуальные курсы валют, cross-rate расчёт через USD, корректирующие коэффициенты, ShedLock
+- ✅ **OpenFeign** — декларативные HTTP-клиенты (individuals-api → currency-rate-service)
 - ✅ **Event-Driven Architecture** — Apache Kafka для асинхронных операций
 - ✅ **OAuth2/JWT аутентификация** — интеграция с Keycloak
 - ✅ **Distributed Tracing** — OpenTelemetry + Tempo
@@ -23,7 +25,7 @@
 - ✅ **Database Audit** — Hibernate Envers для отслеживания изменений
 - ✅ **OpenAPI Specification** — автогенерация DTO из YAML
 - ✅ **Database Sharding** — Apache ShardingSphere JDBC (optional profile)
-- ✅ **Comprehensive Testing** — 100 unit & integration тестов, 80%+ покрытие
+- ✅ **Comprehensive Testing** — unit & integration тесты, 80%+ покрытие бизнес-логики
 
 ---
 
@@ -32,10 +34,12 @@
 | Документ | Описание |
 |----------|----------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Архитектурные диаграммы (C4, Sequence) |
+| [individuals-api/README.md](individuals-api/README.md) | Individuals API (оркестратор) |
 | [transaction-service/README.md](transaction-service/README.md) | Transaction Service API и архитектура |
+| [currency-rate-service/README.md](currency-rate-service/README.md) | Currency Rate Service API и архитектура |
 | [docs/TEST_COVERAGE_REPORT.md](docs/TEST_COVERAGE_REPORT.md) | Отчёт о покрытии тестами |
 
-### Диаграммы
+### Диаграммы (PlantUML)
 
 | Диаграмма | Описание |
 |-----------|----------|
@@ -63,35 +67,42 @@
 │  │ • Authentication & Registration                      │   │
 │  │ • JWT Token Management                               │   │
 │  │ • Proxy to Person Service & Transaction Service      │   │
+│  │ • Currency rate fetch via OpenFeign                  │   │
 │  └──────────────────────────────────────────────────────┘   │
-└────┬──────────────────┬──────────────────┬──────────────────┘
-     │                  │                  │
-     ▼                  ▼                  ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│   Person     │  │ Transaction  │  │   Keycloak   │
-│   Service    │  │   Service    │  │   (OAuth2)   │
-│   (8082)     │  │   (8083)     │  │   (8080)     │
-└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-       │                 │                 │
-       ▼                 ▼                 ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  Person DB   │  │Transaction DB│  │ Keycloak DB  │
-│  (Postgres)  │  │  (Postgres)  │  │  (Postgres)  │
-│    :5434     │  │    :5435     │  │    :5433     │
-└──────────────┘  └──────────────┘  └──────────────┘
-                         │
-                         ▼
-                  ┌──────────────┐
-                  │    Kafka     │
-                  │   (Events)   │
-                  │    :9092     │
-                  └──────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
+└────┬──────────────┬──────────────┬──────────────┬───────────┘
+     │              │              │              │
+     ▼              ▼              ▼              ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────┐ ┌──────────────┐
+│   Person     │ │ Transaction  │ │ Keycloak │ │Currency Rate │
+│   Service    │ │   Service    │ │ (OAuth2) │ │   Service    │
+│   (8082)     │ │   (8083)     │ │  (8080)  │ │   (8085)     │
+└──────┬───────┘ └──────┬───────┘ └────┬─────┘ └──────┬───────┘
+       │                │              │               │
+       ▼                ▼              ▼               ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────┐ ┌──────────────┐
+│  Person DB   │ │Transaction DB│ │Keycloak  │ │ Currency DB  │
+│  (Postgres)  │ │  (Postgres)  │ │   DB     │ │  (Postgres)  │
+│    :5434     │ │    :5435     │ │  :5433   │ │    :5436     │
+└──────────────┘ └──────┬───────┘ └──────────┘ └──────────────┘
+                        │
+                        ▼
+                 ┌──────────────┐        ┌───────────────────────┐
+                 │    Kafka     │        │ exchangerate-api.com  │
+                 │   (Events)   │        │   (External Rates)    │
+                 │    :9092     │        └───────────────────────┘
+                 └──────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────────┐
 │                 Observability Stack                         │
-│     Prometheus │ Grafana │ Loki │ Tempo │ Promtail          │
+│  Prometheus:9090 │ Grafana:3000 │ Loki:3100 │ Tempo:3200    │
+│                  Promtail (log shipper)                     │
 └─────────────────────────────────────────────────────────────┘
+
+                 ┌──────────────┐
+                 │  Nexus OSS   │
+                 │    :8091     │
+                 │ Maven repo   │
+                 └──────────────┘
 ```
 
 ---
@@ -105,34 +116,41 @@
 
 ### 1. Клонирование репозитория
 ```bash
-git clone <repository-url>
+git clone 
 cd payment-system
 ```
 
 ### 2. Запуск всех сервисов
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### 3. Проверка статуса
 ```bash
-docker-compose ps
+docker ps --format "table {{.Names}}\t{{.Status}}"
 ```
 
 Должны быть запущены:
 - ✅ individuals-api (8081)
 - ✅ person-service (8082)
 - ✅ transaction-service (8083)
+- ✅ currency-rate-service (8085)
 - ✅ keycloak (8080)
 - ✅ kafka (9092)
-- ✅ zookeeper (2181)
 - ✅ nexus (8091)
 - ✅ prometheus (9090)
 - ✅ grafana (3000)
 - ✅ loki (3100)
 - ✅ tempo (3200)
 
-### 4. Регистрация пользователя
+### 4. Smoke test
+```bash
+curl http://localhost:8081/actuator/health
+curl http://localhost:8085/actuator/health
+curl "http://localhost:8085/api/v1/rates?from=USD&to=EUR" | jq
+```
+
+### 5. Регистрация пользователя
 ```bash
 curl -X POST http://localhost:8081/v1/auth/registration \
   -H 'Content-Type: application/json' \
@@ -145,30 +163,6 @@ curl -X POST http://localhost:8081/v1/auth/registration \
   }' | jq
 ```
 
-### 5. Создание кошелька (через оркестратор)
-```bash
-TOKEN="<access_token from registration>"
-
-curl -X POST http://localhost:8081/v1/wallets \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "walletTypeUid": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-    "name": "My USD Wallet"
-  }' | jq
-```
-
-### 6. Инициализация депозита
-```bash
-curl -X POST http://localhost:8081/v1/transactions/deposit/init \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "walletUid": "<wallet_uid>",
-    "amount": 100
-  }' | jq
-```
-
 ---
 
 ## 🌐 Порты и доступы
@@ -176,12 +170,14 @@ curl -X POST http://localhost:8081/v1/transactions/deposit/init \
 | Сервис | URL | Credentials | Назначение |
 |--------|-----|-------------|------------|
 | **Individuals API** | http://localhost:8081 | — | Orchestrator (auth, wallets, transactions) |
-| **Person Service** | http://localhost:8082 | — | User Data Management |
+| **Person Service** | http://localhost:8082 | — | User Data Management (internal) |
 | **Transaction Service** | http://localhost:8083 | — | Wallets & Transactions (internal) |
+| **Currency Rate Service** | http://localhost:8085 | — | Exchange rates (internal) |
 | **Keycloak** | http://localhost:8080 | admin/admin | Identity Provider |
 | **Nexus OSS** | http://localhost:8091 | admin/admin123 | Maven Repository |
 | **Grafana** | http://localhost:3000 | admin/admin | Dashboards |
 | **Prometheus** | http://localhost:9090 | — | Metrics |
+| **Kafka UI** | http://localhost:8084 | — | Kafka Browser |
 
 ---
 
@@ -195,14 +191,14 @@ POST /v1/auth/refresh-token   # Refresh JWT
 GET  /v1/auth/me              # Get current user info
 ```
 
-### Wallets (proxied to Transaction Service)
+### Wallets
 ```bash
 POST /v1/wallets              # Create wallet
 GET  /v1/wallets/{uid}        # Get wallet
 GET  /v1/wallets              # List user wallets
 ```
 
-### Transactions (proxied to Transaction Service)
+### Transactions
 ```bash
 POST /v1/transactions/{type}/init      # Init (deposit/withdrawal/transfer)
 POST /v1/transactions/{type}/confirm   # Confirm
@@ -219,59 +215,78 @@ GET  /v1/transactions/{uid}/status     # Get status
 
 ---
 
+## 💱 Currency Rate Service
+
+### API
+```bash
+GET /api/v1/rates?from=USD&to=EUR             # Актуальный курс
+GET /api/v1/rates?from=USD&to=EUR&timestamp=  # Курс на дату
+GET /api/v1/currencies                         # Список валют
+GET /api/v1/rate-providers                     # Провайдеры
+```
+
+### Поддерживаемые валюты
+USD, EUR, RUB, GBP, CNY, JPY, CHF, CAD, AUD, TRY (10 валют, 90 пар)
+
+### Корректирующие коэффициенты
+```
+rate_final = rate_raw * factor
+```
+Коэффициенты хранятся в таблице `rate_correction_factors`. Примеры: USD→EUR `0.9980`, USD→RUB `1.0020`.
+
+---
+
 ## 📊 Kafka Topics
 
-| Topic | Direction | Purpose |
-|-------|-----------|---------|
-| `deposit-requested` | → Payment Gateway | Initiate deposit |
-| `deposit-completed` | ← Payment Gateway | Credit wallet |
-| `withdrawal-requested` | → Payment Gateway | Initiate withdrawal |
-| `withdrawal-completed` | ← Payment Gateway | Confirm withdrawal |
-| `withdrawal-failed` | ← Payment Gateway | Refund on failure |
+| Topic | Producer | Consumer | Purpose |
+|-------|----------|----------|---------|
+| `deposit-requested` | transaction-service | Payment Gateway | Initiate deposit |
+| `deposit-completed` | Payment Gateway | transaction-service | Credit wallet |
+| `withdrawal-requested` | transaction-service | Payment Gateway | Initiate withdrawal |
+| `withdrawal-completed` | Payment Gateway | transaction-service | Confirm withdrawal |
+| `withdrawal-failed` | Payment Gateway | transaction-service | Refund on failure |
 
 ---
 
 ## 🧪 Тестирование
 
-### Запуск всех тестов
 ```bash
+# Все тесты
 ./gradlew test
-```
 
-### По модулям
-```bash
+# По модулям
 ./gradlew :person-service:test
 ./gradlew :individuals-api:test
 ./gradlew :transaction-service:test
+./gradlew :currency-rate-service:test
+./gradlew :currency-rate-service:integrationTest
 ```
-
-### Статистика
-- **100 тестов** (unit + integration)
-- **Покрытие бизнес-логики**: 80-85%
-- **TestContainers** для PostgreSQL
-- **H2** для быстрых unit-тестов
 
 ---
 
 ## 🔧 Локальная разработка
 
-### Сборка проектов
+### Сборка всех модулей
 ```bash
 ./gradlew build
 ```
 
-### Запуск отдельных сервисов
+### Пересборка одного сервиса (быстро)
+```bash
+# Без пересборки Docker образа — копируем jar напрямую
+./gradlew :individuals-api:bootJar -x test
+docker cp individuals-api/build/libs/individuals-api-0.0.1-SNAPSHOT.jar individuals-api:/app/app.jar
+docker restart individuals-api
+```
+
+### Запуск отдельных сервисов локально
 ```bash
 # Инфраструктура
-docker-compose up -d zookeeper kafka transaction-postgres keycloak-postgres keycloak person-postgres
+docker compose up -d zookeeper kafka transaction-postgres keycloak-postgres keycloak person-postgres currency-postgres
 
-# Person Service
-./gradlew :person-service:bootRun
-
-# Transaction Service  
+# Сервисы
+./gradlew :currency-rate-service:bootRun
 ./gradlew :transaction-service:bootRun
-
-# Individuals API
 ./gradlew :individuals-api:bootRun
 ```
 
