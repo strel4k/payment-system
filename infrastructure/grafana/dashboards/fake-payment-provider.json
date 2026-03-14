@@ -1,0 +1,141 @@
+{
+  "title": "Fake Payment Provider",
+  "uid": "fake-payment-provider",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "tags": ["fake-payment-provider", "payment-system"],
+  "time": { "from": "now-30m", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+    { "id": 1, "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "title": "🟢 Service Health", "collapsed": false },
+    { "id": 2, "type": "stat", "title": "Service UP", "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "targets": [{ "expr": "up{job=\"fake-payment-provider\"}", "refId": "A" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }, "color": { "mode": "thresholds" } } }
+    },
+    { "id": 3, "type": "stat", "title": "HTTP Requests (5m)", "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "targets": [{ "expr": "sum(increase(http_server_requests_seconds_count{job=\"fake-payment-provider\"}[5m]))", "refId": "A" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } } }
+    },
+    { "id": 4, "type": "stat", "title": "Errors 4xx+5xx (5m)", "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "targets": [{ "expr": "sum(increase(http_server_requests_seconds_count{job=\"fake-payment-provider\", status=~\"[45]..\"}[5m])) or vector(0)", "refId": "A" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }, "color": { "mode": "thresholds" } } }
+    },
+    { "id": 5, "type": "stat", "title": "Avg Response Time", "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "targets": [{ "expr": "sum(rate(http_server_requests_seconds_sum{job=\"fake-payment-provider\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\"}[5m]))", "refId": "A" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.3 }, { "color": "red", "value": 1 }] }, "color": { "mode": "thresholds" } } }
+    },
+    { "id": 6, "type": "stat", "title": "p99 Latency", "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "targets": [{ "expr": "histogram_quantile(0.99, sum by(le) (rate(http_server_requests_seconds_bucket{job=\"fake-payment-provider\"}[5m])))", "refId": "A" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 2 }] }, "color": { "mode": "thresholds" } } }
+    },
+    { "id": 7, "type": "stat", "title": "Uptime", "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "targets": [{ "expr": "process_uptime_seconds{job=\"fake-payment-provider\"}", "refId": "A" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "fixed", "fixedColor": "blue" } } }
+    },
+    { "id": 10, "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "title": "💳 Transactions", "collapsed": false },
+    { "id": 11, "type": "timeseries", "title": "POST /api/v1/transactions", "gridPos": { "h": 8, "w": 8, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/api/v1/transactions\", method=\"POST\", status=\"201\"}[2m]))", "legendFormat": "201 Created", "refId": "A" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/api/v1/transactions\", method=\"POST\", status=\"400\"}[2m]))", "legendFormat": "400 Bad Request", "refId": "B" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/api/v1/transactions\", method=\"POST\", status=\"401\"}[2m]))", "legendFormat": "401 Unauthorized", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "201 Created" },    "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+        { "matcher": { "id": "byName", "options": "400 Bad Request" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+        { "matcher": { "id": "byName", "options": "401 Unauthorized" },"properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+      ]},
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    { "id": 12, "type": "timeseries", "title": "GET /api/v1/transactions/{id}", "gridPos": { "h": 8, "w": 8, "x": 8, "y": 6 },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=~\"/api/v1/transactions/.*\", method=\"GET\", status=\"200\"}[2m]))", "legendFormat": "200 OK", "refId": "A" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=~\"/api/v1/transactions/.*\", method=\"GET\", status=\"404\"}[2m]))", "legendFormat": "404 Not Found", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "200 OK" },       "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+        { "matcher": { "id": "byName", "options": "404 Not Found" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+      ]},
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    { "id": 13, "type": "timeseries", "title": "GET /api/v1/transactions (список)", "gridPos": { "h": 8, "w": 8, "x": 16, "y": 6 },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/api/v1/transactions\", method=\"GET\", status=\"200\"}[2m]))", "legendFormat": "200 OK", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, sum by(le) (rate(http_server_requests_seconds_bucket{job=\"fake-payment-provider\", uri=\"/api/v1/transactions\", method=\"GET\"}[2m])))", "legendFormat": "p99 latency", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "200 OK" },      "properties": [{ "id": "unit", "value": "reqps" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+        { "matcher": { "id": "byName", "options": "p99 latency" }, "properties": [{ "id": "unit", "value": "s" }, { "id": "custom.axisPlacement", "value": "right" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }] }
+      ]},
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    { "id": 20, "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }, "title": "💸 Payouts", "collapsed": false },
+    { "id": 21, "type": "timeseries", "title": "POST /api/v1/payouts", "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/api/v1/payouts\", method=\"POST\", status=\"201\"}[2m]))", "legendFormat": "201 Created", "refId": "A" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/api/v1/payouts\", method=\"POST\", status=\"400\"}[2m]))", "legendFormat": "400 Bad Request", "refId": "B" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/api/v1/payouts\", method=\"POST\", status=\"401\"}[2m]))", "legendFormat": "401 Unauthorized", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "201 Created" },    "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+        { "matcher": { "id": "byName", "options": "400 Bad Request" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+        { "matcher": { "id": "byName", "options": "401 Unauthorized" },"properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+      ]},
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    { "id": 22, "type": "timeseries", "title": "GET /api/v1/payouts/{id}", "gridPos": { "h": 8, "w": 8, "x": 8, "y": 15 },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=~\"/api/v1/payouts/.*\", method=\"GET\", status=\"200\"}[2m]))", "legendFormat": "200 OK", "refId": "A" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=~\"/api/v1/payouts/.*\", method=\"GET\", status=\"404\"}[2m]))", "legendFormat": "404 Not Found", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "200 OK" },       "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+        { "matcher": { "id": "byName", "options": "404 Not Found" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+      ]},
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    { "id": 23, "type": "timeseries", "title": "GET /api/v1/payouts (список)", "gridPos": { "h": 8, "w": 8, "x": 16, "y": 15 },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/api/v1/payouts\", method=\"GET\", status=\"200\"}[2m]))", "legendFormat": "200 OK", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, sum by(le) (rate(http_server_requests_seconds_bucket{job=\"fake-payment-provider\", uri=\"/api/v1/payouts\", method=\"GET\"}[2m])))", "legendFormat": "p99 latency", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "200 OK" },      "properties": [{ "id": "unit", "value": "reqps" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+        { "matcher": { "id": "byName", "options": "p99 latency" }, "properties": [{ "id": "unit", "value": "s" }, { "id": "custom.axisPlacement", "value": "right" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }] }
+      ]},
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    { "id": 30, "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }, "title": "🔔 Webhooks", "collapsed": false },
+    { "id": 31, "type": "timeseries", "title": "POST /webhook/transaction", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/webhook/transaction\", method=\"POST\", status=\"200\"}[2m]))", "legendFormat": "200 OK (обработан)", "refId": "A" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/webhook/transaction\", method=\"POST\", status=\"400\"}[2m]))", "legendFormat": "400 Not Found / Invalid", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "200 OK (обработан)" },    "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+        { "matcher": { "id": "byName", "options": "400 Not Found / Invalid" },"properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+      ]},
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    { "id": 32, "type": "timeseries", "title": "POST /webhook/payout", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/webhook/payout\", method=\"POST\", status=\"200\"}[2m]))", "legendFormat": "200 OK (обработан)", "refId": "A" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"fake-payment-provider\", uri=\"/webhook/payout\", method=\"POST\", status=\"400\"}[2m]))", "legendFormat": "400 Not Found / Invalid", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "200 OK (обработан)" },    "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+        { "matcher": { "id": "byName", "options": "400 Not Found / Invalid" },"properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+      ]},
+      "options": { "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    }
+  ],
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "links": []
+}

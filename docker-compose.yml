@@ -490,6 +490,49 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ==================== FAKE PAYMENT PROVIDER ====================
+  fake-payment-provider:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: fake-payment-provider/Dockerfile
+    container_name: fake-payment-provider
+    environment:
+      SERVER_PORT: "8090"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://fpp-postgres:5432/fpp
+      SPRING_DATASOURCE_USERNAME: ${FPP_DB_USERNAME:-fpp}
+      SPRING_DATASOURCE_PASSWORD: ${FPP_DB_PASSWORD:-fpp}
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    depends_on:
+      fpp-postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+
+  fpp-postgres:
+    image: postgres:16-alpine
+    container_name: fpp-postgres
+    environment:
+      POSTGRES_DB: fpp
+      POSTGRES_USER: ${FPP_DB_USERNAME:-fpp}
+      POSTGRES_PASSWORD: ${FPP_DB_PASSWORD:-fpp}
+    ports:
+      - "5437:5432"
+    volumes:
+      - fpp_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FPP_DB_USERNAME:-fpp} -d fpp"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   currency_postgres_data:
   person_postgres_data:
@@ -497,3 +540,4 @@ volumes:
   transaction_postgres_0_data:
   transaction_postgres_1_data:
   nexus_data:
+  fpp_postgres_data:

@@ -1,0 +1,29 @@
+@startuml FPP_C4_Container
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+LAYOUT_TOP_DOWN()
+
+title Fake Payment Provider — C4 Container Diagram
+
+Person_Ext(merchant, "Merchant System", "Внешнее приложение клиента,\nиспользующее API провайдера")
+System_Ext(extnet, "External Payment Network\n(Simulator)", "Имитация внешнего\nплатёжного шлюза,\nотправляющего webhook-уведомления")
+
+System_Boundary(fpp, "Fake Payment Provider (Эмулятор)") {
+    Container(api, "Payment Provider API", "Spring Boot 3.5.0\nJava 21 / :8090", "REST API для транзакций и выплат;\nBasic Auth (merchantId/secretKey);\nинициирует webhook-уведомления")
+    ContainerDb(db, "PostgreSQL Database", "PostgreSQL :5436", "merchants, transactions,\npayouts, webhooks (audit log)")
+}
+
+Rel(merchant, api, "POST /api/v1/transactions\nPOST /api/v1/payouts\nGET /api/v1/transactions/{id}\nGET /api/v1/payouts/{id}", "HTTP + Basic Auth")
+Rel(api, db, "Read/Write\n(transactions, payouts,\nmerchants, webhooks)", "JDBC / Spring Data JPA\n+ Flyway")
+Rel(extnet, api, "POST /webhook/transaction\nPOST /webhook/payout\n{id, status: SUCCESS|FAILED}", "HTTP/JSON")
+Rel(api, extnet, "HTTP 200 OK / 400 Bad Request", "HTTP/JSON")
+
+note right of api
+  Webhook delivery:
+  - Async processing
+  - Up to 3 retry attempts
+  - Exponential backoff
+  - Idempotency check
+  - Audit log in webhooks table
+end note
+
+@enduml

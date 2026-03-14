@@ -10,7 +10,8 @@
 | **individuals-api** | 29 | ~28% | 20% |
 | **transaction-service** | 38 | ~20%+ | 20% |
 | **currency-rate-service** | 9 | — | — |
-| **Итого** | **109** | — | — |
+| **fake-payment-provider** | 48 | ~70%+ | — |
+| **Итого** | **157** | — | — |
 
 > Overall % низкий из-за автогенерированных OpenAPI DTO и entity классов.
 > Покрытие бизнес-логики (после exclusions): **~80-90%** по всем модулям.
@@ -138,17 +139,62 @@ per-class: 20% minimum (с exclusions)
 
 ---
 
+## 🎯 fake-payment-provider — 48 тестов
+
+### Тест-классы
+
+| Класс | Тестов | Тип |
+|-------|--------|-----|
+| `TransactionServiceTest` | 9 | Unit |
+| `PayoutServiceTest` | 9 | Unit |
+| `WebhookServiceTest` | 7 | Unit |
+| `WebhookDeliveryServiceTest` | 5 | Unit |
+| `TransactionIT` | 7 | Integration (TestContainers) |
+| `PayoutIT` | 7 | Integration (TestContainers) |
+| `WebhookIT` | 5 | Integration (TestContainers) |
+| `WebhookDeliveryIT` | 4 | Integration (TestContainers + MockRestServiceServer) |
+
+### Покрытые компоненты
+✅ **TransactionService** — создание (PENDING), получение по ID (404 если не найдено), список по мерчанту  
+✅ **PayoutService** — создание (PENDING), получение по ID (404 если не найдено), список по мерчанту  
+✅ **WebhookService** — обновление статуса транзакции/выплаты, idempotency (terminal status), audit log, валидация PENDING-статуса, вызов delivery  
+✅ **WebhookDeliveryService** — успех с 1-й попытки, retry, исчерпание попыток, null URL, blank URL  
+✅ **TransactionIT** — E2E: Basic Auth (401 без авторизации), создание транзакции (201), получение (200/404), список  
+✅ **PayoutIT** — E2E: Basic Auth (401 без авторизации), создание выплаты (201), получение (200/404), список  
+✅ **WebhookIT** — E2E: обновление статуса (SUCCESS/FAILED), idempotency при повторном вызове, невалидные данные (404)  
+✅ **WebhookDeliveryIT** — outbound delivery (MockRestServiceServer): SUCCESS/FAILED доставка, отсутствие запроса без notification_url, retry при ошибке сервера
+
+### Исключены из JaCoCo
+- DTO классы — автогенерированы openapi-generator
+- `FakePaymentProviderApplication` — точка входа
+- `SecurityConfig` — конфигурация
+- `ApiClient*`, `RFC3339DateFormat`, `ServerConfiguration`, `StringUtil` — сгенерированный boilerplate
+
+### Архитектура тестов
+- **Singleton TestContainers** — `AbstractIT` запускает `postgres:16-alpine` один раз для всего тестового прогона через `static {}` блок
+- **`@IntegrationTest`** — составная аннотация (`@SpringBootTest` + `@ActiveProfiles("test")` + `@Testcontainers`)
+- **`application-test.yml`** — тестовый конфиг отделён от тест-логики (`ddl-auto: none`, Flyway active)
+- **`TestRestTemplate`** — реальные HTTP запросы к поднятому контексту с Basic Auth
+
+### JaCoCo
+```
+JaCoCo настроен с exclusions (dto/**, api/**, config/**, ApiClient*.class и т.д.)
+Отчёт: fake-payment-provider/build/reports/jacoco/test/html/index.html
+```
+
+---
+
 ## 🧪 Типы тестов
 
 ### Unit Tests (с Mockito)
 - Мокируются все внешние зависимости (БД, HTTP клиенты, Kafka)
 - Быстрые, без инфраструктуры
-- Покрывают: PersonApplicationService, PersonMapper, UserService, TokenService, AuthController, TransferService, TransactionController, FeeCalculator, InitRequestCache, WalletService, ExchangeRateService
+- Покрывают: PersonApplicationService, PersonMapper, UserService, TokenService, AuthController, TransferService, TransactionController, FeeCalculator, InitRequestCache, WalletService, ExchangeRateService, TransactionService (FPP), PayoutService (FPP), WebhookService (FPP)
 
 ### Integration Tests (с TestContainers)
 - Реальная PostgreSQL в Docker-контейнере
 - Keycloak в Docker-контейнере (individuals-api)
-- Покрывают: PersonsApiIT, TransactionServiceIntegrationTest, TransactionRollbackTest, WalletTransactionFlowIT, AuthFlowIntegrationTest, CurrencyRateIT
+- Покрывают: PersonsApiIT, TransactionServiceIntegrationTest, TransactionRollbackTest, WalletTransactionFlowIT, AuthFlowIntegrationTest, CurrencyRateIT, TransactionIT (FPP), PayoutIT (FPP), WebhookIT (FPP)
 
 ### Integration Tests (с MockBean)
 - MockBean для внешних HTTP сервисов (PersonServiceClient, TransactionServiceClient, CurrencyRateServiceClient)
@@ -167,6 +213,7 @@ per-class: 20% minimum (с exclusions)
 ./gradlew :individuals-api:test
 ./gradlew :transaction-service:test
 ./gradlew :currency-rate-service:test
+./gradlew :fake-payment-provider:test
 
 # Интеграционные тесты
 ./gradlew :individuals-api:integrationTest
@@ -176,11 +223,13 @@ per-class: 20% minimum (с exclusions)
 ./gradlew :person-service:jacocoTestReport
 ./gradlew :individuals-api:jacocoTestReport
 ./gradlew :transaction-service:jacocoTestReport
+./gradlew :fake-payment-provider:jacocoTestReport
 
 # Открыть отчёты
 open person-service/build/reports/jacoco/test/html/index.html
 open individuals-api/build/reports/jacoco/test/html/index.html
 open transaction-service/build/reports/jacoco/test/html/index.html
+open fake-payment-provider/build/reports/jacoco/test/html/index.html
 
 # Проверка thresholds
 ./gradlew :person-service:jacocoTestCoverageVerification
@@ -195,11 +244,13 @@ open transaction-service/build/reports/jacoco/test/html/index.html
 
 ## ✅ Итог
 
-- ✅ **109 тестов** — все проходят
-- ✅ Unit + Integration тесты по всем четырём сервисам
+- ✅ **157 тестов** — все проходят
+- ✅ Unit + Integration тесты по всем пяти сервисам
 - ✅ TestContainers (PostgreSQL, Keycloak) для интеграционных тестов
 - ✅ `@Transactional` rollback тесты для transaction-service
 - ✅ Cross-currency transfer тесты (same-currency и USD→EUR) в individuals-api
 - ✅ JaCoCo executionData включает `test.exec` + `integrationTest.exec`
 - ✅ JaCoCo thresholds пройдены во всех модулях
 - ✅ Покрытие бизнес-логики **80-90%** (после исключения autogenerated кода)
+- ✅ Singleton TestContainers в fake-payment-provider — один контейнер на весь прогон
+- ✅ Webhook idempotency проверена интеграционными тестами

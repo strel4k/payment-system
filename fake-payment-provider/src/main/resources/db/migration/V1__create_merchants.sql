@@ -1,0 +1,8 @@
+CREATE TABLE merchants
+(
+    id SERIAL PRIMARY KEY,
+    merchant_id VARCHAR(50)  NOT NULL UNIQUE,
+    secret_key VARCHAR(255) NOT NULL,
+    name VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

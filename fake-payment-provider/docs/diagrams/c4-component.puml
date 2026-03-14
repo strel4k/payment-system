@@ -1,0 +1,61 @@
+@startuml FPP_C4_Component
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Fake Payment Provider - C4 Component Diagram
+
+Person_Ext(merchant, "Merchant System", "External client")
+System_Ext(extnet, "External Payment Network (Simulator)", "Sends webhook notifications")
+
+Container_Boundary(fpp, "Fake Payment Provider [Spring Boot :8090]") {
+
+    Component(secFilter, "BasicAuthSecurityFilter", "Spring Security Filter Chain", "Intercepts /api/v1/** requests. Decodes Authorization: Basic header. Returns 401 on invalid credentials.")
+
+    Component(merchantDetails, "MerchantUserDetailsService", "Spring UserDetailsService", "Loads MerchantPrincipal by merchantId. Verifies secretKey via BCryptPasswordEncoder.")
+
+    Component(tc, "TransactionController", "Spring MVC RestController /api/v1/transactions", "POST - create transaction. GET - list by date range. GET /{id} - transaction details.")
+
+    Component(pc, "PayoutController", "Spring MVC RestController /api/v1/payouts", "POST - create payout. GET - list with optional date filter. GET /{id} - payout details.")
+
+    Component(wc, "WebhookController", "Spring MVC RestController /webhook", "POST /transaction - incoming transaction status. POST /payout - incoming payout status. No Basic Auth required.")
+
+    Component(ts, "TransactionService", "Spring Service", "Creates transaction with PENDING status. Validates amount, currency, method. Checks merchant ownership.")
+
+    Component(ps, "PayoutService", "Spring Service", "Creates payout with PENDING status. Validates amount and currency. Checks merchant ownership.")
+
+    Component(ws, "WebhookService", "Spring Service", "Idempotency check: if status is not PENDING - audit only, no update. Updates transaction or payout status. Saves audit record to webhooks table.")
+
+    Component(mr, "MerchantRepository", "Spring Data JPA", "findByMerchantId(String)")
+
+    Component(tr, "TransactionRepository", "Spring Data JPA", "save(), findById(), findByMerchantAndCreatedAtBetween()")
+
+    Component(pr, "PayoutRepository", "Spring Data JPA", "save(), findById(), findByMerchantAndCreatedAtBetween()")
+
+    Component(wr, "WebhookRepository", "Spring Data JPA", "save() - audit log of every incoming notification")
+}
+
+ContainerDb(db, "PostgreSQL :5436", "PostgreSQL", "merchants, transactions, payouts, webhooks")
+
+Rel(merchant, secFilter, "HTTP + Basic Auth /api/v1/**")
+Rel(extnet, wc, "HTTP POST /webhook/transaction or /webhook/payout")
+
+Rel(secFilter, merchantDetails, "loadUserByUsername(merchantId)")
+Rel(merchantDetails, mr, "findByMerchantId()")
+Rel(secFilter, tc, "authenticated request")
+Rel(secFilter, pc, "authenticated request")
+
+Rel(tc, ts, "createTransaction(), getTransaction(), listTransactions()")
+Rel(pc, ps, "createPayout(), getPayout(), listPayouts()")
+Rel(wc, ws, "processTransactionWebhook(), processPayoutWebhook()")
+
+Rel(ts, tr, "save(), find()")
+Rel(ps, pr, "save(), find()")
+Rel(ws, tr, "findById(), save() - update status")
+Rel(ws, pr, "findById(), save() - update status")
+Rel(ws, wr, "save() - audit record")
+
+Rel(mr, db, "SQL - merchants")
+Rel(tr, db, "SQL - transactions")
+Rel(pr, db, "SQL - payouts")
+Rel(wr, db, "SQL - webhooks")
+
+@enduml

@@ -1,0 +1,84 @@
+@startuml FPP_Sequence_Transaction
+title Fake Payment Provider — Transaction Flow (Пополнение)
+
+actor "Merchant App" as MA
+participant "TransactionController" as TC
+participant "MerchantAuthService" as AUTH
+participant "TransactionService" as TS
+database "PostgreSQL" as DB
+participant "WebhookService" as WS
+participant "External Network\n(Simulator)" as EXT
+
+== Создание транзакции ==
+
+MA -> TC: POST /api/v1/transactions\n(Authorization: Basic base64(merchantId:secretKey))\n{amount, currency, method, description?}
+activate TC
+
+TC -> AUTH: authenticate(merchantId, secretKey)
+activate AUTH
+AUTH -> DB: SELECT * FROM merchants WHERE merchant_id = ?
+DB --> AUTH: merchant record
+AUTH --> TC: authenticated Merchant
+deactivate AUTH
+
+TC -> TS: createTransaction(request, merchant)
+activate TS
+TS -> TS: validate amount > 0
+TS -> TS: validate currency (ISO 4217)
+TS -> TS: validate method (CARD, etc.)
+TS -> DB: INSERT INTO transactions\n(merchant_id, amount, currency, method,\nstatus='PENDING', created_at=NOW())
+DB --> TS: transaction {id, ...}
+TS --> TC: TransactionDTO (status=PENDING)
+deactivate TS
+
+TC --> MA: 201 Created\n{id, merchantId, amount, currency, method,\nstatus="PENDING", createdAt}
+deactivate TC
+
+== Асинхронная обработка webhook ==
+
+...async (внешняя сеть обрабатывает платёж)...
+
+EXT -> TC: POST /webhook/transaction\n{id, status="SUCCESS"|"FAILED", reason?}
+activate TC
+TC -> WS: handleTransactionWebhook(payload)
+activate WS
+WS -> DB: SELECT * FROM transactions WHERE id = ?
+DB --> WS: transaction record
+
+alt Транзакция уже в конечном статусе (idempotency)
+    WS -> DB: INSERT INTO webhooks\n(event_type, entity_id, payload, received_at)
+    WS --> TC: 200 OK (already processed)
+else Транзакция в статусе PENDING
+    WS -> DB: UPDATE transactions\nSET status=?, updated_at=NOW()\nWHERE id=?
+    WS -> DB: INSERT INTO webhooks\n(event_type, entity_id, payload, received_at)
+    DB --> WS: OK
+    WS --> TC: 200 OK
+end
+deactivate WS
+TC --> EXT: 200 OK
+deactivate TC
+
+== Получение статуса транзакции ==
+
+MA -> TC: GET /api/v1/transactions/{id}\n(Authorization: Basic ...)
+activate TC
+TC -> AUTH: authenticate(merchantId, secretKey)
+AUTH -> DB: SELECT merchant
+DB --> AUTH: merchant
+AUTH --> TC: Merchant
+TC -> TS: getTransaction(id, merchant)
+activate TS
+TS -> DB: SELECT * FROM transactions WHERE id=? AND merchant_id=?
+alt Найдена
+    DB --> TS: transaction record
+    TS --> TC: TransactionDTO
+    TC --> MA: 200 OK {transaction details}
+else Не найдена / чужая
+    DB --> TS: empty
+    TS --> TC: NotFoundException
+    TC --> MA: 404 Not Found\n{error: "NOT_FOUND", message: "..."}
+end
+deactivate TS
+deactivate TC
+
+@enduml
