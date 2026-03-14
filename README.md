@@ -12,7 +12,7 @@
 
 ## 🎯 Возможности
 
-- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service + currency-rate-service
+- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service + currency-rate-service + fake-payment-provider
 - ✅ **Wallet Management** — создание и управление кошельками пользователей
 - ✅ **Transaction Processing** — deposit, withdrawal, transfer с двухфазным подтверждением
 - ✅ **Currency Rate Service** — актуальные курсы валют, cross-rate расчёт через USD, корректирующие коэффициенты, ShedLock
@@ -37,6 +37,7 @@
 | [individuals-api/README.md](individuals-api/README.md) | Individuals API (оркестратор) |
 | [transaction-service/README.md](transaction-service/README.md) | Transaction Service API и архитектура |
 | [currency-rate-service/README.md](currency-rate-service/README.md) | Currency Rate Service API и архитектура |
+| [fake-payment-provider/README.md](fake-payment-provider/README.md) | Fake Payment Provider — эмулятор платёжного шлюза |
 | [docs/TEST_COVERAGE_REPORT.md](docs/TEST_COVERAGE_REPORT.md) | Отчёт о покрытии тестами |
 
 ### Диаграммы (PlantUML)
@@ -77,8 +78,8 @@
 │   Service    │ │   Service    │ │ (OAuth2) │ │   Service    │
 │   (8082)     │ │   (8083)     │ │  (8080)  │ │   (8085)     │
 └──────┬───────┘ └──────┬───────┘ └────┬─────┘ └──────┬───────┘
-       │                │              │               │
-       ▼                ▼              ▼               ▼
+       │                │              │              │
+       ▼                ▼              ▼              ▼
 ┌──────────────┐ ┌──────────────┐ ┌──────────┐ ┌──────────────┐
 │  Person DB   │ │Transaction DB│ │Keycloak  │ │ Currency DB  │
 │  (Postgres)  │ │  (Postgres)  │ │   DB     │ │  (Postgres)  │
@@ -103,6 +104,22 @@
                  │    :8091     │
                  │ Maven repo   │
                  └──────────────┘
+
+┌──────────────────────────────────────────────┐
+│          Fake Payment Provider               │
+│    (Payment Gateway Emulator, Port 8090)     │
+│  • Basic Auth (merchantId / secretKey)       │
+│  • POST /api/v1/transactions                 │
+│  • POST /api/v1/payouts                      │
+│  • POST /webhook/transaction|payout          │
+└──────────────────┬───────────────────────────┘
+                   │
+                   ▼
+            ┌──────────────┐
+            │   FPP DB     │
+            │  (Postgres)  │
+            │    :5437     │
+            └──────────────┘
 ```
 
 ---
@@ -135,6 +152,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 - ✅ person-service (8082)
 - ✅ transaction-service (8083)
 - ✅ currency-rate-service (8085)
+- ✅ fake-payment-provider (8090)
 - ✅ keycloak (8080)
 - ✅ kafka (9092)
 - ✅ nexus (8091)
@@ -260,6 +278,7 @@ rate_final = rate_raw * factor
 ./gradlew :transaction-service:test
 ./gradlew :currency-rate-service:test
 ./gradlew :currency-rate-service:integrationTest
+./gradlew :fake-payment-provider:test
 ```
 
 ---
@@ -352,4 +371,3 @@ docker exec transaction-postgres psql -U postgres -d transaction \
 ## 📄 License
 
 This project is licensed under the MIT License.
-

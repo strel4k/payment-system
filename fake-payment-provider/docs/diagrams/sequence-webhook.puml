@@ -1,0 +1,59 @@
+@startuml FPP_Sequence_Webhook
+title Fake Payment Provider — Webhook Integration Flow
+
+participant "External Provider\n(Simulator)" as EXT
+participant "WebhookController" as WC
+participant "WebhookService" as WS
+database "PostgreSQL" as DB
+
+== Входящий webhook (статус транзакции / выплаты) ==
+
+EXT -> WC: POST /webhook/transaction\n(или /webhook/payout)\nContent-Type: application/json\n{id: 42, status: "SUCCESS", reason: "..."}
+activate WC
+
+WC -> WC: Десериализация тела запроса\n(StatusUpdate DTO)
+WC -> WC: Валидация: id != null, status ∈ {SUCCESS, FAILED}
+
+alt Невалидный запрос
+    WC --> EXT: 400 Bad Request\n{error: "VALIDATION_ERROR", message: "..."}
+end
+
+WC -> WS: processWebhook(entityType, payload)
+activate WS
+
+WS -> DB: SELECT * FROM transactions|payouts\nWHERE id = ?
+activate DB
+DB --> WS: entity record (or null)
+deactivate DB
+
+alt Сущность не найдена
+    WS --> WC: EntityNotFoundException
+    WC --> EXT: 400 Bad Request\n{error: "NOT_FOUND", message: "Transaction 42 not found"}
+end
+
+WS -> WS: Idempotency check:\nif (entity.status != PENDING) — уже обработано
+
+alt Уже в конечном статусе (SUCCESS|FAILED)
+    WS -> DB: INSERT INTO webhooks\n(event_type, entity_id, payload,\nreceived_at=NOW())\n[audit only, no status change]
+    WS --> WC: ok (idempotent)
+    WC --> EXT: 200 OK
+else Статус PENDING — нужно обновить
+    WS -> DB: UPDATE transactions|payouts\nSET status = ?, updated_at = NOW()\nWHERE id = ?
+    WS -> DB: INSERT INTO webhooks\n(event_type, entity_id, payload,\nreceived_at=NOW())
+    DB --> WS: OK
+    WS --> WC: ok
+    WC --> EXT: 200 OK
+end
+deactivate WS
+deactivate WC
+
+note over DB
+  Таблица webhooks — audit log:
+  • event_type VARCHAR(50)   — 'TRANSACTION' | 'PAYOUT'
+  • entity_id  BIGINT        — FK на transactions/payouts
+  • payload    JSONB         — весь входящий payload
+  • received_at TIMESTAMP    — время получения
+  • notification_url VARCHAR — URL источника (опц.)
+end note
+
+@enduml

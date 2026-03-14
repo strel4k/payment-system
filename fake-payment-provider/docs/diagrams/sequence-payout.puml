@@ -1,0 +1,77 @@
+@startuml FPP_Sequence_Payout
+title Fake Payment Provider — Payout Flow (Выплата)
+
+actor "Merchant App" as MA
+participant "PayoutController" as PC
+participant "MerchantAuthService" as AUTH
+participant "PayoutService" as PS
+database "PostgreSQL" as DB
+participant "WebhookService" as WS
+participant "External Network\n(Simulator)" as EXT
+
+== Создание выплаты ==
+
+MA -> PC: POST /api/v1/payouts\n(Authorization: Basic base64(merchantId:secretKey))\n{amount, currency}
+activate PC
+
+PC -> AUTH: authenticate(merchantId, secretKey)
+activate AUTH
+AUTH -> DB: SELECT * FROM merchants WHERE merchant_id = ?
+DB --> AUTH: merchant record
+AUTH --> PC: authenticated Merchant
+deactivate AUTH
+
+PC -> PS: createPayout(request, merchant)
+activate PS
+PS -> PS: validate amount > 0
+PS -> PS: validate currency (ISO 4217)
+PS -> DB: INSERT INTO payouts\n(merchant_id, amount, currency,\nstatus='PENDING', created_at=NOW())
+DB --> PS: payout {id, ...}
+PS --> PC: PayoutDTO (status=PENDING)
+deactivate PS
+
+PC --> MA: 201 Created\n{id, merchantId, amount, currency,\nstatus="PENDING", createdAt}
+deactivate PC
+
+== Асинхронное уведомление о статусе ==
+
+...async (внешняя сеть обрабатывает выплату)...
+
+EXT -> PC: POST /webhook/payout\n{id, status="SUCCESS"|"FAILED", reason?}
+activate PC
+PC -> WS: handlePayoutWebhook(payload)
+activate WS
+WS -> DB: SELECT * FROM payouts WHERE id = ?
+DB --> WS: payout record
+
+alt Выплата уже в конечном статусе (idempotency check)
+    WS -> DB: INSERT INTO webhooks\n(event_type='PAYOUT', entity_id, payload, received_at)
+    WS --> PC: 200 OK (duplicate, logged only)
+else Выплата в статусе PENDING
+    WS -> DB: UPDATE payouts\nSET status=?, updated_at=NOW()\nWHERE id=?
+    WS -> DB: INSERT INTO webhooks\n(event_type='PAYOUT', entity_id, payload, received_at)
+    DB --> WS: OK
+    WS --> PC: 200 OK
+end
+deactivate WS
+PC --> EXT: 200 OK
+deactivate PC
+
+== Получение списка выплат ==
+
+MA -> PC: GET /api/v1/payouts?start_date=...&end_date=...\n(Authorization: Basic ...)
+activate PC
+PC -> AUTH: authenticate(merchantId, secretKey)
+AUTH -> DB: SELECT merchant
+DB --> AUTH: merchant
+AUTH --> PC: Merchant
+PC -> PS: listPayouts(merchant, startDate?, endDate?)
+activate PS
+PS -> DB: SELECT * FROM payouts\nWHERE merchant_id=?\n[AND created_at BETWEEN ? AND ?]
+DB --> PS: payout list
+PS --> PC: List<PayoutDTO>
+PC --> MA: 200 OK [...payouts]
+deactivate PS
+deactivate PC
+
+@enduml
