@@ -2,6 +2,7 @@ package com.example.payment.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -9,24 +10,21 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.Map;
-
 @Slf4j
 @Service
 public class WebhookDeliveryService {
 
-    private static final int MAX_ATTEMPTS = 3;
-
     private final RestTemplate restTemplate;
+    private final int maxAttempts;
     private final long baseDelayMs;
 
     @Autowired
-    public WebhookDeliveryService(RestTemplate restTemplate) {
-        this(restTemplate, 1_000);
-    }
-
-    WebhookDeliveryService(RestTemplate restTemplate, long baseDelayMs) {
+    public WebhookDeliveryService(
+            RestTemplate restTemplate,
+            @Value("${webhook.delivery.max-attempts:3}") int maxAttempts,
+            @Value("${webhook.delivery.base-delay-ms:1000}") long baseDelayMs) {
         this.restTemplate = restTemplate;
+        this.maxAttempts = maxAttempts;
         this.baseDelayMs = baseDelayMs;
     }
 
@@ -37,28 +35,20 @@ public class WebhookDeliveryService {
             return;
         }
 
-        Map<String, Object> payload = Map.of(
-                "type", type,
-                "id", entityId,
-                "status", status
-        );
+        HttpEntity<WebhookNotification> request = buildRequest(type, entityId, status);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
-
-        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                restTemplate.postForEntity(notificationUrl, request, String.class);
+                restTemplate.postForEntity(notificationUrl, request, Void.class);
                 log.info("Webhook delivered: type={} id={} status={} url={} attempt={}",
                         type, entityId, status, notificationUrl, attempt);
                 return;
             } catch (Exception ex) {
                 log.warn("Webhook delivery failed: type={} id={} url={} attempt={}/{} error={}",
-                        type, entityId, notificationUrl, attempt, MAX_ATTEMPTS, ex.getMessage());
+                        type, entityId, notificationUrl, attempt, maxAttempts, ex.getMessage());
 
-                if (attempt < MAX_ATTEMPTS) {
-                    long delay = baseDelayMs * (1L << (attempt - 1)); // 1s, 2s, 4s
+                if (attempt < maxAttempts) {
+                    long delay = baseDelayMs * (1L << (attempt - 1));
                     try {
                         Thread.sleep(delay);
                     } catch (InterruptedException ie) {
@@ -71,6 +61,12 @@ public class WebhookDeliveryService {
         }
 
         log.error("Webhook delivery exhausted all {} attempts: type={} id={} url={}",
-                MAX_ATTEMPTS, type, entityId, notificationUrl);
+                maxAttempts, type, entityId, notificationUrl);
+    }
+
+    private HttpEntity<WebhookNotification> buildRequest(String type, Long entityId, String status) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return new HttpEntity<>(new WebhookNotification(type, entityId, status), headers);
     }
 }

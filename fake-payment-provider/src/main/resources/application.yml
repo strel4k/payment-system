@@ -47,3 +47,5 @@ webhook:
   delivery:
     connect-timeout-seconds: ${WEBHOOK_CONNECT_TIMEOUT:5}
     read-timeout-seconds: ${WEBHOOK_READ_TIMEOUT:10}
+    max-attempts: ${WEBHOOK_MAX_ATTEMPTS:3}
+    base-delay-ms: ${WEBHOOK_BASE_DELAY_MS:1000}

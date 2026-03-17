@@ -24,41 +24,41 @@ class WebhookDeliveryServiceTest {
 
     @BeforeEach
     void setUp() {
-        deliveryService = new WebhookDeliveryService(restTemplate, 0);
+        deliveryService = new WebhookDeliveryService(restTemplate, 3, 0L);
     }
 
     @Test
     @DisplayName("deliver — успешная доставка с первой попытки")
     void deliver_success_firstAttempt() {
-        when(restTemplate.postForEntity(any(String.class), any(), eq(String.class)))
-                .thenReturn(ResponseEntity.ok("OK"));
+        when(restTemplate.postForEntity(any(String.class), any(), eq(Void.class)))
+                .thenReturn(ResponseEntity.ok().build());
 
         deliveryService.deliver("http://merchant.example.com/notify", "TRANSACTION", 1L, "SUCCESS");
 
-        verify(restTemplate, times(1)).postForEntity(any(String.class), any(), eq(String.class));
+        verify(restTemplate, times(1)).postForEntity(any(String.class), any(), eq(Void.class));
     }
 
     @Test
     @DisplayName("deliver — retry: 1 ошибка, 2-я попытка успешна")
     void deliver_retryOnce_secondAttemptSucceeds() {
-        when(restTemplate.postForEntity(any(String.class), any(), eq(String.class)))
+        when(restTemplate.postForEntity(any(String.class), any(), eq(Void.class)))
                 .thenThrow(new RestClientException("Connection refused"))
-                .thenReturn(ResponseEntity.ok("OK"));
+                .thenReturn(ResponseEntity.ok().build());
 
         deliveryService.deliver("http://merchant.example.com/notify", "PAYOUT", 2L, "FAILED");
 
-        verify(restTemplate, times(2)).postForEntity(any(String.class), any(), eq(String.class));
+        verify(restTemplate, times(2)).postForEntity(any(String.class), any(), eq(Void.class));
     }
 
     @Test
     @DisplayName("deliver — исчерпаны все 3 попытки, ошибка не пробрасывается")
     void deliver_allAttemptsExhausted_noExceptionThrown() {
-        when(restTemplate.postForEntity(any(String.class), any(), eq(String.class)))
+        when(restTemplate.postForEntity(any(String.class), any(), eq(Void.class)))
                 .thenThrow(new RestClientException("Timeout"));
 
         deliveryService.deliver("http://unreachable.example.com/notify", "TRANSACTION", 3L, "SUCCESS");
 
-        verify(restTemplate, times(3)).postForEntity(any(String.class), any(), eq(String.class));
+        verify(restTemplate, times(3)).postForEntity(any(String.class), any(), eq(Void.class));
     }
 
     @Test

@@ -18,6 +18,11 @@ management:
       exposure:
         include: health,prometheus
 
+webhook:
+  delivery:
+    base-delay-ms: 0
+    max-attempts: 3
+
 logging:
   level:
     com.example.payment: DEBUG
