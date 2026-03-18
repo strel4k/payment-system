@@ -75,3 +75,7 @@ scrape_configs:
     metrics_path: "/metrics"
     static_configs:
       - targets: ["individuals-keycloak:9000"]
+  - job_name: "fake-payment-provider"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["fake-payment-provider:8090"]

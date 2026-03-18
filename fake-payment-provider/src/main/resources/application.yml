@@ -1,0 +1,51 @@
+server:
+  port: ${SERVER_PORT:8090}
+
+spring:
+  application:
+    name: fake-payment-provider
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5437/fpp}
+    username: ${SPRING_DATASOURCE_USERNAME:fpp}
+    password: ${SPRING_DATASOURCE_PASSWORD:fpp}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:30000}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+webhook:
+  delivery:
+    connect-timeout-seconds: ${WEBHOOK_CONNECT_TIMEOUT:5}
+    read-timeout-seconds: ${WEBHOOK_READ_TIMEOUT:10}
+    max-attempts: ${WEBHOOK_MAX_ATTEMPTS:3}
+    base-delay-ms: ${WEBHOOK_BASE_DELAY_MS:1000}

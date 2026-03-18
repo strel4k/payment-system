@@ -1,0 +1,387 @@
+openapi: 3.0.0
+info:
+  title: Fake Payment Provider API
+  version: "1.0"
+  description: >
+    API учебного микросервиса "Fake Payment Provider".
+    Поддерживает операции с транзакциями пополнения, выплатами
+    и обработку webhook-уведомлений о статусах.
+
+servers:
+  - url: http://localhost:8090
+    description: Local development server
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
+  schemas:
+
+    TransactionRequest:
+      type: object
+      required: [amount, currency, method]
+      properties:
+        amount:
+          type: number
+          format: double
+          minimum: 0.01
+          description: Сумма пополнения (должна быть больше 0)
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: Трёхбуквенный код валюты по ISO 4217, например USD
+        method:
+          type: string
+          description: Способ оплаты, например CARD
+        description:
+          type: string
+          maxLength: 255
+          description: Необязательное описание платежа
+        notificationUrl:
+          type: string
+          maxLength: 2048
+          description: URL для обратного уведомления (опционально)
+
+    Transaction:
+      type: object
+      required: [id, merchantId, amount, currency, method, status, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        merchantId:
+          type: string
+        amount:
+          type: number
+          format: double
+        currency:
+          type: string
+        method:
+          type: string
+        status:
+          type: string
+          description: Статус транзакции — PENDING, SUCCESS или FAILED
+          enum: [PENDING, SUCCESS, FAILED]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        description:
+          type: string
+        externalId:
+          type: string
+        notificationUrl:
+          type: string
+
+    PayoutRequest:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+          format: double
+          minimum: 0.01
+          description: Сумма выплаты (должна быть больше 0)
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: Код валюты выплаты
+        notificationUrl:
+          type: string
+          maxLength: 2048
+          description: URL для обратного уведомления (опционально)
+
+    Payout:
+      type: object
+      required: [id, merchantId, amount, currency, status, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        merchantId:
+          type: string
+        amount:
+          type: number
+          format: double
+        currency:
+          type: string
+        status:
+          type: string
+          description: Статус выплаты — PENDING, SUCCESS или FAILED
+          enum: [PENDING, SUCCESS, FAILED]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        externalId:
+          type: string
+        notificationUrl:
+          type: string
+
+    StatusUpdate:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: ID транзакции или выплаты, статус которой обновляется
+        status:
+          type: string
+          description: Новый статус — SUCCESS или FAILED
+          enum: [SUCCESS, FAILED]
+        reason:
+          type: string
+          description: Необязательная причина отказа или дополнительная информация
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Короткий код ошибки, например VALIDATION_ERROR
+        message:
+          type: string
+          description: Описание ошибки
+
+security:
+  - basicAuth: []
+
+paths:
+
+  /api/v1/transactions:
+    post:
+      summary: Создать новую транзакцию пополнения
+      operationId: createTransaction
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionRequest'
+      responses:
+        '201':
+          description: Транзакция успешно создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Неверный запрос — валидация не пройдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Требуется аутентификация или неверные креденшалы
+
+    get:
+      summary: Получить список транзакций за период дат
+      operationId: listTransactions
+      security:
+        - basicAuth: []
+      parameters:
+        - in: query
+          name: start_date
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Начало периода (включительно), формат ISO 8601
+        - in: query
+          name: end_date
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Конец периода (включительно), формат ISO 8601
+      responses:
+        '200':
+          description: Список найденных транзакций за период
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Неверные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Неавторизован
+
+  /api/v1/transactions/{id}:
+    get:
+      summary: Получить детали конкретной транзакции
+      operationId: getTransaction
+      security:
+        - basicAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: ID транзакции
+      responses:
+        '200':
+          description: Детали транзакции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '401':
+          description: Неавторизован
+        '404':
+          description: Транзакция не найдена или принадлежит другому мерчанту
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/payouts:
+    post:
+      summary: Создать запрос на выплату
+      operationId: createPayout
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutRequest'
+      responses:
+        '201':
+          description: Выплата успешно зарегистрирована
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payout'
+        '400':
+          description: Неверный запрос — ошибка валидации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Неавторизован
+
+    get:
+      summary: Получить список выплат (при желании — за период)
+      operationId: listPayouts
+      security:
+        - basicAuth: []
+      parameters:
+        - in: query
+          name: start_date
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Начальная дата фильтра (опционально)
+        - in: query
+          name: end_date
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Конечная дата фильтра (опционально)
+      responses:
+        '200':
+          description: Список выплат
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Payout'
+        '401':
+          description: Неавторизован
+
+  /api/v1/payouts/{id}:
+    get:
+      summary: Получить детали конкретной выплаты
+      operationId: getPayout
+      security:
+        - basicAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: ID выплаты
+      responses:
+        '200':
+          description: Детали выплаты
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payout'
+        '401':
+          description: Неавторизован
+        '404':
+          description: Выплата не найдена или принадлежит другому мерчанту
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /webhook/transaction:
+    post:
+      summary: Входящее уведомление о статусе транзакции
+      operationId: handleTransactionWebhook
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusUpdate'
+      responses:
+        '200':
+          description: Уведомление принято, статус обновлён
+        '400':
+          description: Некорректный запрос — транзакция не найдена или неверный статус
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /webhook/payout:
+    post:
+      summary: Входящее уведомление о статусе выплаты
+      operationId: handlePayoutWebhook
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusUpdate'
+      responses:
+        '200':
+          description: Уведомление о выплате принято, статус обновлён
+        '400':
+          description: Некорректный запрос — выплата не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

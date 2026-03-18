@@ -13,6 +13,7 @@ TEMPO_URL       = http://localhost:3200/status
 INDIVIDUALS_API_URL     = http://localhost:8081/actuator/health
 PERSON_SERVICE_URL      = http://localhost:8082/actuator/health
 TRANSACTION_SERVICE_URL = http://localhost:8083/actuator/health
+FPP_URL                 = http://localhost:8090/actuator/health
 
 # Infrastructure services (without Kafka for basic infra)
 INFRA_SERVICES ?= person-postgres keycloak-postgres individuals-keycloak nexus loki prometheus grafana promtail tempo
@@ -20,7 +21,7 @@ INFRA_SERVICES ?= person-postgres keycloak-postgres individuals-keycloak nexus l
 # Full infrastructure including Kafka
 INFRA_FULL ?= $(INFRA_SERVICES) zookeeper kafka transaction-postgres kafka-exporter person-postgres-exporter transaction-postgres-exporter keycloak-postgres-exporter
 
-.PHONY: all up start stop clean logs rebuild infra infra-full infra-logs infra-stop health loki-test test test-coverage nexus-publish nexus-password kafka-topics kafka-ui
+.PHONY: all up start stop clean logs rebuild infra infra-full infra-logs infra-stop health loki-test test test-coverage nexus-publish nexus-password kafka-topics kafka-ui test-fpp db-fpp
 
 all: infra-full start health
 
@@ -58,6 +59,8 @@ wait:
 	@$(call WAIT_HTTP,$(INDIVIDUALS_API_URL))
 	@echo "Waiting for Transaction Service..."
 	@$(call WAIT_HTTP,$(TRANSACTION_SERVICE_URL))
+	@echo "Waiting for Fake Payment Provider..."
+	@$(call WAIT_HTTP,$(FPP_URL))
 
 stop:
 	$(DOCKER_COMPOSE) down
@@ -131,6 +134,7 @@ health:
 	@echo "Person Service:"; curl -sS $(PERSON_SERVICE_URL) | jq
 	@echo "Individuals API:"; curl -sS $(INDIVIDUALS_API_URL) | jq
 	@echo "Transaction Service:"; curl -sS $(TRANSACTION_SERVICE_URL) | jq
+	@echo "Fake Payment Provider:"; curl -sS $(FPP_URL) | jq
 	@echo ""
 	@echo "=== Prometheus Targets ==="
 	@curl -sS http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | {job:.labels.job, health:.health, lastError:.lastError}'
@@ -168,9 +172,10 @@ test:
 	./gradlew test
 	@echo ""
 	@echo "=== Test Summary ==="
-	@echo "person-service:      $$(find person-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
-	@echo "individuals-api:     $$(find individuals-api/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
-	@echo "transaction-service: $$(find transaction-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "person-service:        $$(find person-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "individuals-api:       $$(find individuals-api/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "transaction-service:   $$(find transaction-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "fake-payment-provider: $$(find fake-payment-provider/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
 
 test-unit:
 	@echo "Running unit tests only..."
@@ -188,13 +193,18 @@ test-transaction:
 	@echo "Running transaction-service tests..."
 	./gradlew :transaction-service:test
 
+test-fpp:
+	@echo "Running fake-payment-provider tests..."
+	./gradlew :fake-payment-provider:test
+
 test-coverage:
 	@echo "Generating coverage reports..."
 	./gradlew jacocoTestReport
 	@echo "Coverage reports generated:"
-	@echo "  person-service:      person-service/build/reports/jacoco/test/html/index.html"
-	@echo "  individuals-api:     individuals-api/build/reports/jacoco/test/html/index.html"
-	@echo "  transaction-service: transaction-service/build/reports/jacoco/test/html/index.html"
+	@echo "  person-service:        person-service/build/reports/jacoco/test/html/index.html"
+	@echo "  individuals-api:       individuals-api/build/reports/jacoco/test/html/index.html"
+	@echo "  transaction-service:   transaction-service/build/reports/jacoco/test/html/index.html"
+	@echo "  fake-payment-provider: fake-payment-provider/build/reports/jacoco/test/html/index.html"
 
 # Nexus
 nexus-publish:
@@ -216,5 +226,8 @@ db-person:
 
 db-keycloak:
 	@docker exec -it keycloak-postgres psql -U postgres -d keycloak
+
+db-fpp:
+	@docker exec -it fpp-postgres psql -U fpp -d fpp
 
 rebuild: clean all
