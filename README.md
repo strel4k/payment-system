@@ -12,9 +12,10 @@
 
 ## 🎯 Возможности
 
-- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service + currency-rate-service + fake-payment-provider
+- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service + currency-rate-service + fake-payment-provider + **payment-service**
 - ✅ **Wallet Management** — создание и управление кошельками пользователей
 - ✅ **Transaction Processing** — deposit, withdrawal, transfer с двухфазным подтверждением
+- ✅ **Payment Service** — управление методами оплаты, проведение платежей через FPP, компенсация при ошибках
 - ✅ **Currency Rate Service** — актуальные курсы валют, cross-rate расчёт через USD, корректирующие коэффициенты, ShedLock
 - ✅ **OpenFeign** — декларативные HTTP-клиенты (individuals-api → currency-rate-service)
 - ✅ **Event-Driven Architecture** — Apache Kafka для асинхронных операций
@@ -38,6 +39,7 @@
 | [transaction-service/README.md](transaction-service/README.md) | Transaction Service API и архитектура |
 | [currency-rate-service/README.md](currency-rate-service/README.md) | Currency Rate Service API и архитектура |
 | [fake-payment-provider/README.md](fake-payment-provider/README.md) | Fake Payment Provider — эмулятор платёжного шлюза |
+| [payment-service/README.md](payment-service/README.md) | Payment Service — управление методами оплаты и платежами |
 | [docs/TEST_COVERAGE_REPORT.md](docs/TEST_COVERAGE_REPORT.md) | Отчёт о покрытии тестами |
 
 ### Диаграммы (PlantUML)

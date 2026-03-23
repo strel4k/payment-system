@@ -74,6 +74,33 @@ public class TransactionController implements TransactionsApi {
     }
 
     @Override
+    public ResponseEntity<TransactionStatusResponse> completeTransaction(
+            UUID transactionUid,
+            com.example.transaction.dto.TransactionCompleteRequest request) {
+
+        log.info("POST /transactions/{}/complete externalTransactionId={}",
+                transactionUid, request.getExternalTransactionId());
+
+        TransactionStatusResponse response = transactionService.completeTransaction(
+                transactionUid, request.getExternalTransactionId());
+
+        return ResponseEntity.ok(response);
+    }
+
+    @Override
+    public ResponseEntity<TransactionStatusResponse> failTransaction(
+            UUID transactionUid,
+            com.example.transaction.dto.TransactionFailRequest request) {
+
+        log.info("POST /transactions/{}/fail reason={}", transactionUid, request.getReason());
+
+        TransactionStatusResponse response = transactionService.failTransaction(
+                transactionUid, request.getReason());
+
+        return ResponseEntity.ok(response);
+    }
+
+    @Override
     public ResponseEntity<TransactionPageResponse> searchTransactions(
             UUID userUid,
             UUID walletUid,

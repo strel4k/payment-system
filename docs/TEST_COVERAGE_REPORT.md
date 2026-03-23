@@ -11,7 +11,8 @@
 | **transaction-service** | 38 | ~20%+ | 20% |
 | **currency-rate-service** | 9 | — | — |
 | **fake-payment-provider** | 48 | ~70%+ | — |
-| **Итого** | **157** | — | — |
+| **payment-service** | 22 | ~75%+ | — |
+| **Итого** | **179** | — | — |
 
 > Overall % низкий из-за автогенерированных OpenAPI DTO и entity классов.
 > Покрытие бизнес-логики (после exclusions): **~80-90%** по всем модулям.
@@ -184,17 +185,55 @@ JaCoCo настроен с exclusions (dto/**, api/**, config/**, ApiClient*.cla
 
 ---
 
+## 🎯 payment-service — 22 теста
+
+### Тест-классы
+
+| Класс | Тестов | Тип |
+|-------|--------|-----|
+| `PaymentMethodServiceTest` | 2 | Unit |
+| `PaymentOrchestrationServiceTest` | 4 | Unit |
+| `PaymentPersistenceServiceTest` | 3 | Unit |
+| `PaymentMethodMapperTest` | 5 | Unit |
+| `PaymentMethodIT` | 6 | Integration (TestContainers) |
+| `PaymentOrchestrationIT` | 6 | Integration (TestContainers + WireMock) |
+
+### Покрытые компоненты
+✅ **PaymentMethodService** — фильтрация методов по валюте/стране, пустой результат
+✅ **PaymentOrchestrationService** — happy path (COMPLETED), ошибка FPP → FAILED, method not found, inactive method
+✅ **PaymentPersistenceService** — createPending (статус + поля), markCompleted (externalId), markFailed
+✅ **PaymentMethodMapper** — маппинг всех полей, фильтрация inactive requiredFields, CSV→List для valuesOptions, UUID
+✅ **PaymentMethodIT** — GET /payment-methods: USD/USA (2 метода), EUR/DEU (только CARD), required_fields, 401 без auth
+✅ **PaymentOrchestrationIT** — POST /payments: FPP 201→COMPLETED (проверка БД), FPP 400→422+FAILED (проверка БД), 404 (FPP не вызывается), FPP 500→422, 401 без auth, 401 неверные credentials
+
+### Архитектура тестов
+- **Singleton TestContainers** — `AbstractIT` в `it/config/` запускает `postgres:16-alpine` и WireMock один раз через `static {}` блок
+- **WireMock** — мокирует Fake Payment Provider для интеграционных тестов без реального FPP
+- **`@BeforeEach cleanUp()`** — `paymentRepository.deleteAll()` + `WIRE_MOCK.resetAll()` перед каждым тестом
+- **`application-test.yml`** — тестовый конфиг, `fake-provider.base-url` переопределяется через `@DynamicPropertySource`
+- **Разделение** — контейнеры в `it/config/AbstractIT`, сценарии в `it/*IT` классах
+
+### Исключены из JaCoCo
+- DTO классы — автогенерированы openapi-generator
+- Entity классы (`Payment`, `PaymentMethod` и др.) — нет бизнес-логики
+- `PaymentServiceApplication` — точка входа
+- Configuration классы
+- `ApiClient*`, `RFC3339DateFormat`, `ServerConfiguration`, `StringUtil` — сгенерированный boilerplate
+
+---
+
 ## 🧪 Типы тестов
 
 ### Unit Tests (с Mockito)
 - Мокируются все внешние зависимости (БД, HTTP клиенты, Kafka)
 - Быстрые, без инфраструктуры
-- Покрывают: PersonApplicationService, PersonMapper, UserService, TokenService, AuthController, TransferService, TransactionController, FeeCalculator, InitRequestCache, WalletService, ExchangeRateService, TransactionService (FPP), PayoutService (FPP), WebhookService (FPP)
+- Покрывают: PersonApplicationService, PersonMapper, UserService, TokenService, AuthController, TransferService, TransactionController, FeeCalculator, InitRequestCache, WalletService, ExchangeRateService, TransactionService (FPP), PayoutService (FPP), WebhookService (FPP), **PaymentMethodService, PaymentOrchestrationService, PaymentPersistenceService, PaymentMethodMapper**
 
 ### Integration Tests (с TestContainers)
 - Реальная PostgreSQL в Docker-контейнере
 - Keycloak в Docker-контейнере (individuals-api)
-- Покрывают: PersonsApiIT, TransactionServiceIntegrationTest, TransactionRollbackTest, WalletTransactionFlowIT, AuthFlowIntegrationTest, CurrencyRateIT, TransactionIT (FPP), PayoutIT (FPP), WebhookIT (FPP)
+- WireMock для мокирования Fake Payment Provider (payment-service)
+- Покрывают: PersonsApiIT, TransactionServiceIntegrationTest, TransactionRollbackTest, WalletTransactionFlowIT, AuthFlowIntegrationTest, CurrencyRateIT, TransactionIT (FPP), PayoutIT (FPP), WebhookIT (FPP), **PaymentMethodIT, PaymentOrchestrationIT**
 
 ### Integration Tests (с MockBean)
 - MockBean для внешних HTTP сервисов (PersonServiceClient, TransactionServiceClient, CurrencyRateServiceClient)
@@ -214,6 +253,14 @@ JaCoCo настроен с exclusions (dto/**, api/**, config/**, ApiClient*.cla
 ./gradlew :transaction-service:test
 ./gradlew :currency-rate-service:test
 ./gradlew :fake-payment-provider:test
+./gradlew :payment-service:test
+
+# Только unit-тесты payment-service (без Docker)
+./gradlew :payment-service:test --tests "com.example.paymentservice.service.*"
+./gradlew :payment-service:test --tests "com.example.paymentservice.mapper.*"
+
+# Только интеграционные тесты payment-service (требуется Docker)
+./gradlew :payment-service:test --tests "com.example.paymentservice.it.*"
 
 # Интеграционные тесты
 ./gradlew :individuals-api:integrationTest
@@ -224,12 +271,14 @@ JaCoCo настроен с exclusions (dto/**, api/**, config/**, ApiClient*.cla
 ./gradlew :individuals-api:jacocoTestReport
 ./gradlew :transaction-service:jacocoTestReport
 ./gradlew :fake-payment-provider:jacocoTestReport
+./gradlew :payment-service:jacocoTestReport
 
 # Открыть отчёты
 open person-service/build/reports/jacoco/test/html/index.html
 open individuals-api/build/reports/jacoco/test/html/index.html
 open transaction-service/build/reports/jacoco/test/html/index.html
 open fake-payment-provider/build/reports/jacoco/test/html/index.html
+open payment-service/build/reports/jacoco/test/html/index.html
 
 # Проверка thresholds
 ./gradlew :person-service:jacocoTestCoverageVerification
@@ -244,13 +293,14 @@ open fake-payment-provider/build/reports/jacoco/test/html/index.html
 
 ## ✅ Итог
 
-- ✅ **157 тестов** — все проходят
-- ✅ Unit + Integration тесты по всем пяти сервисам
+- ✅ **179 тестов** — все проходят
+- ✅ Unit + Integration тесты по всем шести сервисам
 - ✅ TestContainers (PostgreSQL, Keycloak) для интеграционных тестов
+- ✅ WireMock для мокирования Fake Payment Provider в payment-service
 - ✅ `@Transactional` rollback тесты для transaction-service
 - ✅ Cross-currency transfer тесты (same-currency и USD→EUR) в individuals-api
 - ✅ JaCoCo executionData включает `test.exec` + `integrationTest.exec`
 - ✅ JaCoCo thresholds пройдены во всех модулях
 - ✅ Покрытие бизнес-логики **80-90%** (после исключения autogenerated кода)
-- ✅ Singleton TestContainers в fake-payment-provider — один контейнер на весь прогон
+- ✅ Singleton TestContainers — один контейнер на весь прогон (fake-payment-provider, payment-service)
 - ✅ Webhook idempotency проверена интеграционными тестами
