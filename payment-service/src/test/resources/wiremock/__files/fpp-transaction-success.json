@@ -1,0 +1,9 @@
+{
+  "id": 99,
+  "merchantId": "merchant-1",
+  "amount": 100.0,
+  "currency": "USD",
+  "method": "CARD",
+  "status": "PENDING",
+  "createdAt": "2026-03-20T17:00:00Z"
+}

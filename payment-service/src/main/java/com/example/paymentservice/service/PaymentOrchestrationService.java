@@ -1,17 +1,17 @@
 package com.example.paymentservice.service;
 
-import com.example.paymentservice.client.FakeProviderClient;
-import com.example.paymentservice.client.dto.FppTransactionResponse;
 import com.example.paymentservice.dto.PaymentRequest;
 import com.example.paymentservice.dto.PaymentResponse;
 import com.example.paymentservice.entity.Payment;
 import com.example.paymentservice.entity.PaymentMethod;
+import com.example.paymentservice.entity.PaymentOutbox;
 import com.example.paymentservice.exception.PaymentMethodNotFoundException;
-import com.example.paymentservice.exception.PaymentProviderException;
 import com.example.paymentservice.repository.PaymentMethodRepository;
+import com.example.paymentservice.repository.PaymentOutboxRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 
@@ -21,11 +21,12 @@ import java.math.BigDecimal;
 public class PaymentOrchestrationService {
 
     private final PaymentMethodRepository paymentMethodRepository;
+    private final PaymentOutboxRepository paymentOutboxRepository;
     private final PaymentPersistenceService paymentPersistenceService;
-    private final FakeProviderClient fakeProviderClient;
 
+    @Transactional
     public PaymentResponse processPayment(PaymentRequest request) {
-        log.info("Processing payment: internalTransactionUid={} methodId={} amount={} currency={}",
+        log.info("Initiating payment: internalTransactionUid={} methodId={} amount={} currency={}",
                 request.getInternalTransactionUid(),
                 request.getMethodId(),
                 request.getAmount(),
@@ -45,30 +46,19 @@ public class PaymentOrchestrationService {
                 request.getCurrency()
         );
 
-        try {
-            FppTransactionResponse fppResponse = fakeProviderClient.createTransaction(
-                    payment.getAmount(),
-                    payment.getCurrency(),
-                    paymentMethod.getProviderMethodType()
-            );
+        PaymentOutbox outboxEntry = new PaymentOutbox();
+        outboxEntry.setPayment(payment);
+        outboxEntry.setMethodType(paymentMethod.getProviderMethodType());
+        outboxEntry.setAmount(payment.getAmount());
+        outboxEntry.setCurrency(payment.getCurrency());
+        paymentOutboxRepository.save(outboxEntry);
 
-            paymentPersistenceService.markCompleted(payment, fppResponse.id().toString());
+        log.info("Payment queued for processing: paymentId={} outboxId={}",
+                payment.getId(), outboxEntry.getId());
 
-            log.info("Payment processed successfully: id={} providerTransactionId={}",
-                    payment.getId(), fppResponse.id());
-
-            PaymentResponse response = new PaymentResponse();
-            response.setProviderTransactionId(fppResponse.id().toString());
-            response.setStatus(PaymentResponse.StatusEnum.COMPLETED);
-            return response;
-
-        } catch (PaymentProviderException e) {
-            paymentPersistenceService.markFailed(payment);
-
-            log.error("Payment failed: id={} internalTransactionUid={} reason={}",
-                    payment.getId(), payment.getInternalTransactionUid(), e.getMessage());
-
-            throw e;
-        }
+        PaymentResponse response = new PaymentResponse();
+        response.setProviderTransactionId(null);
+        response.setStatus(PaymentResponse.StatusEnum.PENDING);
+        return response;
     }
 }

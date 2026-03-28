@@ -40,7 +40,7 @@
 
 ```bash
 # Из корня payment-system
-./gradlew :payment-service:clean :payment-service:build -x test
+./gradlew :payment-service:clean :payment-service:build test
 
 docker-compose up -d payment-postgres fake-payment-provider payment-service
 ```

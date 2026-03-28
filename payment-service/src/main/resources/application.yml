@@ -59,3 +59,8 @@ logging:
     org.springframework.security: WARN
     org.hibernate.SQL: WARN
     org.flywaydb: INFO
+
+# ============== Transaction Outbox ==============
+payment:
+  outbox:
+    poll-interval-ms: 5000

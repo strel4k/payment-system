@@ -22,9 +22,10 @@ public abstract class AbstractIT {
                 .withPassword("payment_test");
         POSTGRES.start();
 
-        // WireMock стартует статически — до инициализации Spring контекста,
-        // чтобы порт был известен на момент вызова @DynamicPropertySource
-        WIRE_MOCK = new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort());
+        WIRE_MOCK = new WireMockServer(
+                WireMockConfiguration.wireMockConfig()
+                        .dynamicPort()
+        );
         WIRE_MOCK.start();
     }
 

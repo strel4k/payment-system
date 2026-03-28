@@ -14,6 +14,7 @@ INDIVIDUALS_API_URL     = http://localhost:8081/actuator/health
 PERSON_SERVICE_URL      = http://localhost:8082/actuator/health
 TRANSACTION_SERVICE_URL = http://localhost:8083/actuator/health
 FPP_URL                 = http://localhost:8090/actuator/health
+PAYMENT_SERVICE_URL     = http://localhost:8084/actuator/health
 
 # Infrastructure services (without Kafka for basic infra)
 INFRA_SERVICES ?= person-postgres keycloak-postgres individuals-keycloak nexus loki prometheus grafana promtail tempo
@@ -61,6 +62,8 @@ wait:
 	@$(call WAIT_HTTP,$(TRANSACTION_SERVICE_URL))
 	@echo "Waiting for Fake Payment Provider..."
 	@$(call WAIT_HTTP,$(FPP_URL))
+	@echo "Waiting for Payment Service..."
+	@$(call WAIT_HTTP,$(PAYMENT_SERVICE_URL))
 
 stop:
 	$(DOCKER_COMPOSE) down
@@ -135,6 +138,7 @@ health:
 	@echo "Individuals API:"; curl -sS $(INDIVIDUALS_API_URL) | jq
 	@echo "Transaction Service:"; curl -sS $(TRANSACTION_SERVICE_URL) | jq
 	@echo "Fake Payment Provider:"; curl -sS $(FPP_URL) | jq
+	@echo "Payment Service:"; curl -sS $(PAYMENT_SERVICE_URL) | jq
 	@echo ""
 	@echo "=== Prometheus Targets ==="
 	@curl -sS http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | {job:.labels.job, health:.health, lastError:.lastError}'
@@ -197,6 +201,10 @@ test-fpp:
 	@echo "Running fake-payment-provider tests..."
 	./gradlew :fake-payment-provider:test
 
+test-payment:
+	@echo "Running payment-service tests..."
+	./gradlew :payment-service:test
+
 test-coverage:
 	@echo "Generating coverage reports..."
 	./gradlew jacocoTestReport
@@ -229,5 +237,8 @@ db-keycloak:
 
 db-fpp:
 	@docker exec -it fpp-postgres psql -U fpp -d fpp
+
+db-payment:
+	@docker exec -it payment-postgres psql -U payment -d payment
 
 rebuild: clean all

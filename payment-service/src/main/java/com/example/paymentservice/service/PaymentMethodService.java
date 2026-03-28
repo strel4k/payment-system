@@ -20,7 +20,7 @@ public class PaymentMethodService {
 
     @Transactional(readOnly = true)
     public List<PaymentMethodResponse> getPaymentMethods(String currencyCode, String countryCode) {
-        log.info("Fetching payment methods for currency={} country={}", currencyCode, countryCode);
+        log.debug("Fetching payment methods for currency={} country={}", currencyCode, countryCode);
 
         List<PaymentMethodResponse> result = paymentMethodRepository
                 .findActiveByCurrencyAndCountry(currencyCode, countryCode)
@@ -28,7 +28,7 @@ public class PaymentMethodService {
                 .map(paymentMethodMapper::toDto)
                 .toList();
 
-        log.info("Found {} payment methods for currency={} country={}", result.size(), currencyCode, countryCode);
+        log.debug("Found {} payment methods for currency={} country={}", result.size(), currencyCode, countryCode);
         return result;
     }
 }

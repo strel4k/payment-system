@@ -1,0 +1,13 @@
+{
+  "id": "fpp-success",
+  "name": "FPP POST /api/v1/transactions — 201 success",
+  "request": {
+    "method": "POST",
+    "url": "/api/v1/transactions"
+  },
+  "response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "fpp-transaction-success.json"
+  }
+}

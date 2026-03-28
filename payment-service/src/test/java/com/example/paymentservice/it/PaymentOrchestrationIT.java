@@ -1,158 +1,131 @@
 package com.example.paymentservice.it;
 
+import com.example.paymentservice.entity.PaymentOutboxStatus;
 import com.example.paymentservice.entity.PaymentStatus;
 import com.example.paymentservice.it.config.AbstractIT;
+import com.example.paymentservice.repository.PaymentOutboxRepository;
 import com.example.paymentservice.repository.PaymentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 class PaymentOrchestrationIT extends AbstractIT {
 
-    @Autowired
-    private TestRestTemplate restTemplate;
-
-    @Autowired
-    private PaymentRepository paymentRepository;
+    @Autowired private TestRestTemplate restTemplate;
+    @Autowired private PaymentRepository paymentRepository;
+    @Autowired private PaymentOutboxRepository outboxRepository;
 
     private static final String USER     = "test-user";
     private static final String PASSWORD = "test-password";
 
+    private static final String FPP_SUCCESS_BODY = readFile("wiremock/__files/fpp-transaction-success.json");
+    private static final String FPP_400_BODY     = readFile("wiremock/__files/fpp-transaction-400.json");
+
     @BeforeEach
     void cleanUp() {
+        outboxRepository.deleteAll();
         paymentRepository.deleteAll();
         WIRE_MOCK.resetAll();
     }
 
     @Test
-    @DisplayName("POST /payments — FPP возвращает 201 → ответ COMPLETED, в БД статус COMPLETED")
-    void processPayment_fppSuccess_returnsCompleted() {
+    @DisplayName("POST /payments — FPP 201 → сразу PENDING, outbox завершает в COMPLETED")
+    void processPayment_fppSuccess_eventuallyCompleted() {
         WIRE_MOCK.stubFor(post(urlEqualTo("/api/v1/transactions"))
                 .willReturn(aResponse()
                         .withStatus(201)
                         .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                  "id": 99,
-                                  "merchantId": "merchant-1",
-                                  "amount": 100.0,
-                                  "currency": "USD",
-                                  "method": "CARD",
-                                  "status": "PENDING",
-                                  "createdAt": "2026-03-20T17:00:00Z"
-                                }
-                                """)));
-
-        Map<String, Object> request = buildRequest(1, 100.0, "USD");
+                        .withBody(FPP_SUCCESS_BODY)));
 
         ResponseEntity<Map> response = restTemplate
                 .withBasicAuth(USER, PASSWORD)
-                .postForEntity("/api/v1/payments", request, Map.class);
+                .postForEntity("/api/v1/payments", buildRequest(1, 100.0, "USD"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().get("providerTransactionId")).isEqualTo("99");
-        assertThat(response.getBody().get("status")).isEqualTo("COMPLETED");
+        assertThat(response.getBody().get("status")).isEqualTo("PENDING");
 
+        await().atMost(15, TimeUnit.SECONDS)
+                .pollInterval(500, TimeUnit.MILLISECONDS)
+                .untilAsserted(() -> {
+                    var payments = paymentRepository.findAll();
+                    assertThat(payments).hasSize(1);
+                    assertThat(payments.get(0).getStatus()).isEqualTo(PaymentStatus.COMPLETED);
+                    assertThat(payments.get(0).getExternalTransactionId()).isEqualTo("99");
+                });
+
+        var outbox = outboxRepository.findAll();
+        assertThat(outbox).hasSize(1);
+        assertThat(outbox.get(0).getStatus()).isEqualTo(PaymentOutboxStatus.COMPLETED);
         WIRE_MOCK.verify(1, postRequestedFor(urlEqualTo("/api/v1/transactions")));
-
-        var payment = paymentRepository.findAll().stream()
-                .filter(p -> "99".equals(p.getExternalTransactionId()))
-                .findFirst();
-        assertThat(payment).isPresent();
-        assertThat(payment.get().getStatus()).isEqualTo(PaymentStatus.COMPLETED);
     }
 
     @Test
-    @DisplayName("POST /payments — FPP возвращает 400 → ответ 422, в БД статус FAILED")
-    void processPayment_fppReturns400_returns422AndMarksFailed() {
+    @DisplayName("POST /payments — FPP 400 → после retry платёж FAILED")
+    void processPayment_fppReturns400_eventuallyFailed() {
         WIRE_MOCK.stubFor(post(urlEqualTo("/api/v1/transactions"))
                 .willReturn(aResponse()
                         .withStatus(400)
                         .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                  "error": "VALIDATION_ERROR",
-                                  "message": "Invalid method"
-                                }
-                                """)));
+                        .withBody(FPP_400_BODY)));
 
         String internalTxId = UUID.randomUUID().toString();
-        Map<String, Object> request = buildRequest(1, 50.0, "USD");
-        request.put("internalTransactionUid", internalTxId);
+        Map<String, Object> req = buildRequest(1, 50.0, "USD");
+        req.put("internalTransactionUid", internalTxId);
 
         ResponseEntity<Map> response = restTemplate
                 .withBasicAuth(USER, PASSWORD)
-                .postForEntity("/api/v1/payments", request, Map.class);
+                .postForEntity("/api/v1/payments", req, Map.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-        assertThat(response.getBody().get("error")).isEqualTo("PAYMENT_FAILED");
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().get("status")).isEqualTo("PENDING");
 
-        WIRE_MOCK.verify(1, postRequestedFor(urlEqualTo("/api/v1/transactions")));
+        await().atMost(40, TimeUnit.SECONDS)
+                .pollInterval(1, TimeUnit.SECONDS)
+                .untilAsserted(() -> {
+                    var outbox = outboxRepository.findAll();
+                    assertThat(outbox).hasSize(1);
+                    assertThat(outbox.get(0).getStatus()).isEqualTo(PaymentOutboxStatus.FAILED);
+                });
 
-        var payment = paymentRepository.findAll().stream()
-                .filter(p -> internalTxId.equals(p.getInternalTransactionUid()))
-                .findFirst();
+        var payment = paymentRepository.findByInternalTransactionUid(internalTxId);
         assertThat(payment).isPresent();
         assertThat(payment.get().getStatus()).isEqualTo(PaymentStatus.FAILED);
-        assertThat(payment.get().getExternalTransactionId()).isNull();
     }
 
     @Test
-    @DisplayName("POST /payments — несуществующий methodId → 404, FPP не вызывается")
-    void processPayment_unknownMethodId_returns404_fppNotCalled() {
-        Map<String, Object> request = buildRequest(9999, 100.0, "USD");
-
+    @DisplayName("POST /payments — несуществующий methodId → 404 синхронно, outbox не создаётся")
+    void processPayment_unknownMethodId_returns404_noOutboxEntry() {
         ResponseEntity<Map> response = restTemplate
                 .withBasicAuth(USER, PASSWORD)
-                .postForEntity("/api/v1/payments", request, Map.class);
+                .postForEntity("/api/v1/payments", buildRequest(9999, 100.0, "USD"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody().get("error")).isEqualTo("METHOD_NOT_FOUND");
-
+        assertThat(outboxRepository.findAll()).isEmpty();
+        assertThat(paymentRepository.findAll()).isEmpty();
         WIRE_MOCK.verify(0, postRequestedFor(urlEqualTo("/api/v1/transactions")));
-    }
-
-    @Test
-    @DisplayName("POST /payments — FPP недоступен (500) → 422, в БД статус FAILED")
-    void processPayment_fppUnavailable_returns422AndMarksFailed() {
-        WIRE_MOCK.stubFor(post(urlEqualTo("/api/v1/transactions"))
-                .willReturn(aResponse().withStatus(500)));
-
-        String internalTxId = UUID.randomUUID().toString();
-        Map<String, Object> request = buildRequest(1, 100.0, "USD");
-        request.put("internalTransactionUid", internalTxId);
-
-        ResponseEntity<Map> response = restTemplate
-                .withBasicAuth(USER, PASSWORD)
-                .postForEntity("/api/v1/payments", request, Map.class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-
-        var payment = paymentRepository.findAll().stream()
-                .filter(p -> internalTxId.equals(p.getInternalTransactionUid()))
-                .findFirst();
-        assertThat(payment).isPresent();
-        assertThat(payment.get().getStatus()).isEqualTo(PaymentStatus.FAILED);
     }
 
     @Test
     @DisplayName("POST /payments — без авторизации возвращает 401")
     void processPayment_noAuth_returns401() {
-        Map<String, Object> request = buildRequest(1, 100.0, "USD");
-
         ResponseEntity<Map> response = restTemplate
-                .postForEntity("/api/v1/payments", request, Map.class);
+                .postForEntity("/api/v1/payments", buildRequest(1, 100.0, "USD"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         WIRE_MOCK.verify(0, postRequestedFor(urlEqualTo("/api/v1/transactions")));
@@ -161,11 +134,9 @@ class PaymentOrchestrationIT extends AbstractIT {
     @Test
     @DisplayName("POST /payments — неверные credentials возвращают 401")
     void processPayment_wrongCredentials_returns401() {
-        Map<String, Object> request = buildRequest(1, 100.0, "USD");
-
         ResponseEntity<Map> response = restTemplate
-                .withBasicAuth("wrong-user", "wrong-password")
-                .postForEntity("/api/v1/payments", request, Map.class);
+                .withBasicAuth("wrong", "wrong")
+                .postForEntity("/api/v1/payments", buildRequest(1, 100.0, "USD"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         WIRE_MOCK.verify(0, postRequestedFor(urlEqualTo("/api/v1/transactions")));
@@ -180,5 +151,14 @@ class PaymentOrchestrationIT extends AbstractIT {
                 "amount", amount,
                 "currency", currency
         ));
+    }
+
+    private static String readFile(String classpathPath) {
+        try {
+            return new ClassPathResource(classpathPath)
+                    .getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Cannot read test fixture: " + classpathPath, e);
+        }
     }
 }

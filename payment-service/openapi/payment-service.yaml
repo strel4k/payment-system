@@ -122,8 +122,8 @@ components:
           description: ID транзакции во внешнем провайдере (FPP)
         status:
           type: string
-          enum: [COMPLETED, FAILED]
-          description: Итоговый статус платежа
+          enum: [PENDING, COMPLETED, FAILED]
+          description: Статус платежа
 
     ErrorResponse:
       type: object

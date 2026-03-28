@@ -9,3 +9,7 @@ CREATE TABLE payment_method_definitions
     is_priority           BOOLEAN DEFAULT FALSE,
     is_active             BOOLEAN DEFAULT TRUE
 );
+
+CREATE INDEX idx_payment_method_definitions_currency ON payment_method_definitions (currency_code);
+CREATE INDEX idx_payment_method_definitions_country ON payment_method_definitions (country_alpha3_code);
+CREATE INDEX idx_payment_method_definitions_method ON payment_method_definitions (payment_method_id);

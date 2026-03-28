@@ -31,7 +31,6 @@ public class PaymentController {
             @PathVariable String currencyCode,
             @PathVariable String countryCode) {
 
-        log.info("GET /payment-methods/{}/{}", currencyCode, countryCode);
         List<PaymentMethodResponse> result = paymentMethodService.getPaymentMethods(
                 currencyCode, countryCode
         );

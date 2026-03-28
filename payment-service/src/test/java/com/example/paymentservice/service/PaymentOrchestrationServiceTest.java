@@ -1,23 +1,22 @@
 package com.example.paymentservice.service;
 
-import com.example.paymentservice.client.FakeProviderClient;
-import com.example.paymentservice.client.dto.FppTransactionResponse;
 import com.example.paymentservice.dto.PaymentRequest;
 import com.example.paymentservice.dto.PaymentResponse;
 import com.example.paymentservice.entity.Payment;
 import com.example.paymentservice.entity.PaymentMethod;
+import com.example.paymentservice.entity.PaymentOutbox;
 import com.example.paymentservice.entity.PaymentStatus;
 import com.example.paymentservice.exception.PaymentMethodNotFoundException;
-import com.example.paymentservice.exception.PaymentProviderException;
 import com.example.paymentservice.repository.PaymentMethodRepository;
+import com.example.paymentservice.repository.PaymentOutboxRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -35,10 +34,10 @@ class PaymentOrchestrationServiceTest {
     private PaymentMethodRepository paymentMethodRepository;
 
     @Mock
-    private PaymentPersistenceService paymentPersistenceService;
+    private PaymentOutboxRepository paymentOutboxRepository;
 
     @Mock
-    private FakeProviderClient fakeProviderClient;
+    private PaymentPersistenceService paymentPersistenceService;
 
     @InjectMocks
     private PaymentOrchestrationService paymentOrchestrationService;
@@ -71,69 +70,69 @@ class PaymentOrchestrationServiceTest {
     }
 
     @Test
-    @DisplayName("processPayment — happy path: FPP вернул успех → статус COMPLETED")
-    void processPayment_success_returnsCompleted() {
-        FppTransactionResponse fppResponse = new FppTransactionResponse(
-                42L, "merchant-1", 100.0, "USD", "CARD",
-                "PENDING", null, null, null, null, null
-        );
-
+    @DisplayName("processPayment — создаёт Payment(PENDING) и запись outbox, возвращает PENDING")
+    void processPayment_createsPaymentAndOutboxEntry_returnsPending() {
         when(paymentMethodRepository.findById(1)).thenReturn(Optional.of(paymentMethod));
         when(paymentPersistenceService.createPending(any(), any(), any(), any()))
                 .thenReturn(pendingPayment);
-        when(fakeProviderClient.createTransaction(any(), any(), any())).thenReturn(fppResponse);
+        when(paymentOutboxRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         PaymentResponse result = paymentOrchestrationService.processPayment(request);
 
-        assertThat(result).isNotNull();
-        assertThat(result.getProviderTransactionId()).isEqualTo("42");
-        assertThat(result.getStatus()).isEqualTo(PaymentResponse.StatusEnum.COMPLETED);
+        assertThat(result.getStatus()).isEqualTo(PaymentResponse.StatusEnum.PENDING);
+        assertThat(result.getProviderTransactionId()).isNull();
 
-        verify(paymentPersistenceService).createPending(eq(paymentMethod),
+        verify(paymentPersistenceService).createPending(
+                eq(paymentMethod),
                 eq("550e8400-e29b-41d4-a716-446655440000"),
-                eq(BigDecimal.valueOf(100.0)), eq("USD"));
-        verify(paymentPersistenceService).markCompleted(pendingPayment, "42");
+                eq(BigDecimal.valueOf(100.0)),
+                eq("USD")
+        );
+
+        ArgumentCaptor<PaymentOutbox> outboxCaptor = ArgumentCaptor.forClass(PaymentOutbox.class);
+        verify(paymentOutboxRepository).save(outboxCaptor.capture());
+        PaymentOutbox savedOutbox = outboxCaptor.getValue();
+        assertThat(savedOutbox.getPayment()).isEqualTo(pendingPayment);
+        assertThat(savedOutbox.getMethodType()).isEqualTo("CARD");
+        assertThat(savedOutbox.getAmount()).isEqualByComparingTo(BigDecimal.valueOf(100.0));
+        assertThat(savedOutbox.getCurrency()).isEqualTo("USD");
+    }
+
+    @Test
+    @DisplayName("processPayment — FPP НЕ вызывается напрямую (outbox pattern)")
+    void processPayment_doesNotCallFppDirectly() {
+        when(paymentMethodRepository.findById(1)).thenReturn(Optional.of(paymentMethod));
+        when(paymentPersistenceService.createPending(any(), any(), any(), any()))
+                .thenReturn(pendingPayment);
+        when(paymentOutboxRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        paymentOrchestrationService.processPayment(request);
+
+        verify(paymentPersistenceService, never()).markCompleted(any(), any());
         verify(paymentPersistenceService, never()).markFailed(any());
     }
 
     @Test
-    @DisplayName("processPayment — FPP вернул ошибку → статус FAILED, бросает исключение")
-    void processPayment_fppError_marksFailedAndThrows() {
-        when(paymentMethodRepository.findById(1)).thenReturn(Optional.of(paymentMethod));
-        when(paymentPersistenceService.createPending(any(), any(), any(), any()))
-                .thenReturn(pendingPayment);
-        when(fakeProviderClient.createTransaction(any(), any(), any()))
-                .thenThrow(new PaymentProviderException("Provider error", HttpStatus.BAD_GATEWAY));
-
-        assertThatThrownBy(() -> paymentOrchestrationService.processPayment(request))
-                .isInstanceOf(PaymentProviderException.class)
-                .hasMessageContaining("Provider error");
-
-        verify(paymentPersistenceService).markFailed(pendingPayment);
-        verify(paymentPersistenceService, never()).markCompleted(any(), any());
-    }
-
-    @Test
-    @DisplayName("processPayment — methodId не найден → PaymentMethodNotFoundException")
-    void processPayment_methodNotFound_throws() {
+    @DisplayName("processPayment — methodId не найден → PaymentMethodNotFoundException, outbox не создаётся")
+    void processPayment_methodNotFound_throws_noOutboxCreated() {
         when(paymentMethodRepository.findById(1)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> paymentOrchestrationService.processPayment(request))
                 .isInstanceOf(PaymentMethodNotFoundException.class);
 
         verify(paymentPersistenceService, never()).createPending(any(), any(), any(), any());
-        verify(fakeProviderClient, never()).createTransaction(any(), any(), any());
+        verify(paymentOutboxRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("processPayment — метод неактивен → PaymentMethodNotFoundException")
-    void processPayment_inactiveMethod_throws() {
+    @DisplayName("processPayment — метод неактивен → PaymentMethodNotFoundException, outbox не создаётся")
+    void processPayment_inactiveMethod_throws_noOutboxCreated() {
         paymentMethod.setIsActive(false);
         when(paymentMethodRepository.findById(1)).thenReturn(Optional.of(paymentMethod));
 
         assertThatThrownBy(() -> paymentOrchestrationService.processPayment(request))
                 .isInstanceOf(PaymentMethodNotFoundException.class);
 
-        verify(fakeProviderClient, never()).createTransaction(any(), any(), any());
+        verify(paymentOutboxRepository, never()).save(any());
     }
 }
