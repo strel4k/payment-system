@@ -491,6 +491,61 @@ services:
     restart: unless-stopped
 
   # ==================== FAKE PAYMENT PROVIDER ====================
+  payment-service:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
+    container_name: payment-service
+    environment:
+      SERVER_PORT: "8083"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://payment-postgres:5432/payment
+      SPRING_DATASOURCE_USERNAME: ${PAYMENT_DB_USERNAME:-payment}
+      SPRING_DATASOURCE_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment}
+      PAYMENT_SERVICE_USERNAME: ${PAYMENT_SERVICE_USERNAME}
+      PAYMENT_SERVICE_PASSWORD: ${PAYMENT_SERVICE_PASSWORD}
+      FAKE_PROVIDER_URL: http://fake-payment-provider:8090
+      FAKE_PROVIDER_USERNAME: ${FAKE_PROVIDER_USERNAME}
+      FAKE_PROVIDER_PASSWORD: ${FAKE_PROVIDER_PASSWORD}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: payment-service
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+    ports:
+      - "8083:8083"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    depends_on:
+      payment-postgres:
+        condition: service_healthy
+      fake-payment-provider:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+
+  payment-postgres:
+    image: postgres:16-alpine
+    container_name: payment-postgres
+    environment:
+      POSTGRES_DB: payment
+      POSTGRES_USER: ${PAYMENT_DB_USERNAME:-payment}
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment}
+    ports:
+      - "5438:5432"
+    volumes:
+      - payment_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PAYMENT_DB_USERNAME:-payment} -d payment"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   fake-payment-provider:
     restart: unless-stopped
     build:
@@ -541,3 +596,4 @@ volumes:
   transaction_postgres_1_data:
   nexus_data:
   fpp_postgres_data:
+  payment_postgres_data:

@@ -343,4 +343,58 @@ public class TransactionService {
                 .totalPages(transactionPage.getTotalPages())
                 .build();
     }
+
+    @Transactional
+    public TransactionStatusResponse completeTransaction(UUID transactionUid,
+                                                         String externalTransactionId) {
+        log.info("Completing transaction: uid={} externalTransactionId={}",
+                transactionUid, externalTransactionId);
+
+        Transaction transaction = transactionRepository.findByIdWithWallets(transactionUid)
+                .orElseThrow(() -> new TransactionNotFoundException(
+                        "Transaction not found: " + transactionUid));
+
+        if (!transaction.isPending()) {
+            throw new InvalidTransactionException(
+                    "Transaction is not in PENDING status: " + transactionUid);
+        }
+
+        transaction.complete();
+        Transaction saved = transactionRepository.save(transaction);
+
+        log.info("Transaction completed: uid={}", transactionUid);
+        String currencyCode = saved.getWallet().getWalletType().getCurrencyCode();
+        return transactionMapper.toStatusResponse(saved, currencyCode);
+    }
+
+    @Transactional
+    public TransactionStatusResponse failTransaction(UUID transactionUid, String reason) {
+        log.info("Failing transaction: uid={} reason={}", transactionUid, reason);
+
+        Transaction transaction = transactionRepository.findByIdWithWallets(transactionUid)
+                .orElseThrow(() -> new TransactionNotFoundException(
+                        "Transaction not found: " + transactionUid));
+
+        if (!transaction.isPending()) {
+            throw new InvalidTransactionException(
+                    "Transaction is not in PENDING status: " + transactionUid);
+        }
+
+        if (transaction.isWithdrawal()) {
+            Wallet wallet = walletRepository.findByIdForUpdate(transaction.getWallet().getUid())
+                    .orElseThrow(() -> new WalletNotFoundException(
+                            transaction.getWallet().getUid()));
+            wallet.credit(transaction.getTotalAmount());
+            walletRepository.save(wallet);
+            log.info("Wallet balance restored: walletUid={} amount={}",
+                    wallet.getUid(), transaction.getTotalAmount());
+        }
+
+        transaction.fail(reason);
+        Transaction saved = transactionRepository.save(transaction);
+
+        log.info("Transaction failed: uid={}", transactionUid);
+        String currencyCode = saved.getWallet().getWalletType().getCurrencyCode();
+        return transactionMapper.toStatusResponse(saved, currencyCode);
+    }
 }

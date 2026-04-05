@@ -70,6 +70,10 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+tasks.named<Jar>("jar") {
+    enabled = false
+}
+
 // ============== OpenAPI генерация DTO ==============
 openApiGenerate {
     generatorName.set("java")

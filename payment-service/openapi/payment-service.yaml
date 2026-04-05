@@ -1,0 +1,241 @@
+openapi: 3.0.0
+info:
+  title: Payment Service API
+  version: "1.0"
+  description: >
+    Микросервис управления методами оплаты и проведения платежей
+    через интеграцию с Fake Payment Provider.
+
+servers:
+  - url: http://localhost:8083
+    description: Local development server
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
+  schemas:
+
+    RequiredField:
+      type: object
+      properties:
+        uid:
+          type: string
+          format: uuid
+          description: Уникальный идентификатор поля
+        name:
+          type: string
+          description: Системное имя поля
+        description:
+          type: string
+          description: Описание поля
+        placeholder:
+          type: string
+          description: Подсказка для пользователя
+        representation_name:
+          type: string
+          description: Отображаемое имя поля
+        data_type:
+          type: string
+          description: Тип данных поля (STRING, NUMBER, DATE и т.д.)
+        validation_type:
+          type: string
+          description: Тип валидации
+        validation_rule:
+          type: string
+          description: Правило валидации (regexp и т.д.)
+        default_value:
+          type: string
+          description: Значение по умолчанию
+        values_options:
+          type: array
+          items:
+            type: string
+          description: Допустимые значения (для select/enum полей)
+        language:
+          type: string
+          description: Язык локализации (ru, en и т.д.)
+        is_active:
+          type: boolean
+          description: Активно ли поле
+
+    PaymentMethodResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          description: Идентификатор метода оплаты
+        name:
+          type: string
+          description: Название метода оплаты
+        provider_method_type:
+          type: string
+          description: Тип метода у провайдера (CARD, BANK_TRANSFER и т.д.)
+        image_url:
+          type: string
+          description: URL логотипа метода оплаты
+        required_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequiredField'
+          description: Поля, обязательные для проведения платежа
+
+    PaymentRequest:
+      type: object
+      required:
+        - internalTransactionUid
+        - methodId
+        - amount
+        - currency
+      properties:
+        internalTransactionUid:
+          type: string
+          format: uuid
+          description: UID транзакции из Transaction Service
+        methodId:
+          type: integer
+          format: int32
+          description: ID метода оплаты из payment_methods
+        amount:
+          type: number
+          format: double
+          description: Сумма платежа
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: Код валюты ISO 4217 (USD, EUR и т.д.)
+        userFields:
+          type: object
+          additionalProperties:
+            type: string
+          description: Значения required_fields, заполненные пользователем
+
+    PaymentResponse:
+      type: object
+      properties:
+        providerTransactionId:
+          type: string
+          description: ID транзакции во внешнем провайдере (FPP)
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED]
+          description: Статус платежа
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Код ошибки (VALIDATION_ERROR, METHOD_NOT_FOUND и т.д.)
+        message:
+          type: string
+          description: Описание ошибки
+
+security:
+  - basicAuth: []
+
+paths:
+
+  /api/v1/payment-methods/{currencyCode}/{countryCode}:
+    get:
+      summary: Получение доступных методов оплаты
+      description: >
+        Возвращает список активных методов оплаты,
+        доступных для указанной валюты и страны.
+        Учитывает флаги is_all_currencies и is_all_countries.
+      operationId: getPaymentMethods
+      security:
+        - basicAuth: []
+      parameters:
+        - name: currencyCode
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 3
+          description: Код валюты ISO 4217 (например USD)
+        - name: countryCode
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 3
+          description: Код страны ISO 3166-1 alpha-3 (например USA)
+      responses:
+        '200':
+          description: Список доступных методов оплаты
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentMethodResponse'
+        '401':
+          description: Требуется аутентификация
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/payments:
+    post:
+      summary: Проведение платежа
+      description: >
+        Инициирует платёж через Fake Payment Provider.
+        Сохраняет запись в таблице payments со статусом PENDING,
+        вызывает FPP, обновляет статус до COMPLETED или FAILED.
+        При ошибке провайдера — возвращает ошибку, Individuals API
+        выполняет компенсацию транзакции в Transaction Service.
+      operationId: processPayment
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '200':
+          description: Платёж успешно проведён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          description: Ошибка валидации запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Требуется аутентификация
+        '404':
+          description: Метод оплаты не найден или неактивен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Ошибка при проведении платежа через провайдера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

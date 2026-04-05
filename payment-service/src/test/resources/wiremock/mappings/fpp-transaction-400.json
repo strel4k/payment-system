@@ -1,0 +1,15 @@
+{
+  "id": "fpp-400",
+  "name": "FPP POST /api/v1/transactions — 400 validation error",
+  "request": {
+    "method": "POST",
+    "url": "/api/v1/transactions"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "bodyFileName": "fpp-transaction-400.json"
+  }
+}

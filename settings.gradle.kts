@@ -18,5 +18,7 @@ include(
     "transaction-service:transaction-service-api-client",
     "currency-rate-service",
     "currency-rate-service:currency-rate-service-api-client",
-    "fake-payment-provider"
+    "fake-payment-provider",
+    "payment-service",
+    "payment-service:payment-service-api-client"
 )

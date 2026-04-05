@@ -256,6 +256,76 @@ paths:
               schema:
                 $ref: '#/components/schemas/TransactionPageResponse'
 
+  /transactions/{transactionUid}/complete:
+    post:
+      tags:
+        - Transactions
+      summary: Завершить транзакцию (COMPLETED)
+      description: >
+        Устанавливает статус транзакции COMPLETED и сохраняет
+        внешний ID провайдера. Вызывается Individuals API после
+        успешного ответа от Payment Service (без Kafka).
+      operationId: completeTransaction
+      parameters:
+        - name: transactionUid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionCompleteRequest'
+      responses:
+        '200':
+          description: Транзакция переведена в статус COMPLETED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionStatusResponse'
+        '404':
+          description: Транзакция не найдена
+        '422':
+          description: Транзакция не в статусе PENDING
+
+  /transactions/{transactionUid}/fail:
+    post:
+      tags:
+        - Transactions
+      summary: Отменить транзакцию (FAILED)
+      description: >
+        Устанавливает статус транзакции FAILED и откатывает
+        баланс кошелька если средства были зарезервированы.
+        Вызывается Individuals API при ошибке Payment Service (без Kafka).
+      operationId: failTransaction
+      parameters:
+        - name: transactionUid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionFailRequest'
+      responses:
+        '200':
+          description: Транзакция переведена в статус FAILED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionStatusResponse'
+        '404':
+          description: Транзакция не найдена
+        '422':
+          description: Транзакция не в статусе PENDING
+
 components:
   schemas:
     # ==================== WALLET SCHEMAS ====================
@@ -485,3 +555,19 @@ components:
           type: string
         path:
           type: string
+
+    TransactionCompleteRequest:
+      type: object
+      required:
+        - externalTransactionId
+      properties:
+        externalTransactionId:
+          type: string
+          description: ID транзакции во внешнем провайдере (FPP)
+
+    TransactionFailRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Причина отказа (опционально)

@@ -1,0 +1,15 @@
+{
+  "id": "fpp-500",
+  "name": "FPP POST /api/v1/transactions — 500 server error",
+  "request": {
+    "method": "POST",
+    "url": "/api/v1/transactions"
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "bodyFileName": "fpp-transaction-500.json"
+  }
+}
