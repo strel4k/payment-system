@@ -15,14 +15,15 @@ PERSON_SERVICE_URL      = http://localhost:8082/actuator/health
 TRANSACTION_SERVICE_URL = http://localhost:8083/actuator/health
 FPP_URL                 = http://localhost:8090/actuator/health
 PAYMENT_SERVICE_URL     = http://localhost:8084/actuator/health
+WEBHOOK_SERVICE_URL     = http://localhost:8086/actuator/health
 
 # Infrastructure services (without Kafka for basic infra)
 INFRA_SERVICES ?= person-postgres keycloak-postgres individuals-keycloak nexus loki prometheus grafana promtail tempo
 
 # Full infrastructure including Kafka
-INFRA_FULL ?= $(INFRA_SERVICES) zookeeper kafka transaction-postgres kafka-exporter person-postgres-exporter transaction-postgres-exporter keycloak-postgres-exporter
+INFRA_FULL ?= $(INFRA_SERVICES) zookeeper kafka transaction-postgres kafka-exporter person-postgres-exporter transaction-postgres-exporter keycloak-postgres-exporter payment-postgres fpp-postgres webhook-db
 
-.PHONY: all up start stop clean logs rebuild infra infra-full infra-logs infra-stop health loki-test test test-coverage nexus-publish nexus-password kafka-topics kafka-ui test-fpp db-fpp
+.PHONY: all up start stop clean logs rebuild infra infra-full infra-logs infra-stop health loki-test test test-coverage nexus-publish nexus-publish-common nexus-password kafka-topics kafka-ui test-fpp db-fpp test-webhook db-webhook db-payment
 
 all: infra-full start health
 
@@ -64,6 +65,8 @@ wait:
 	@$(call WAIT_HTTP,$(FPP_URL))
 	@echo "Waiting for Payment Service..."
 	@$(call WAIT_HTTP,$(PAYMENT_SERVICE_URL))
+	@echo "Waiting for Webhook Collector Service..."
+	@$(call WAIT_HTTP,$(WEBHOOK_SERVICE_URL))
 
 stop:
 	$(DOCKER_COMPOSE) down
@@ -139,6 +142,7 @@ health:
 	@echo "Transaction Service:"; curl -sS $(TRANSACTION_SERVICE_URL) | jq
 	@echo "Fake Payment Provider:"; curl -sS $(FPP_URL) | jq
 	@echo "Payment Service:"; curl -sS $(PAYMENT_SERVICE_URL) | jq
+	@echo "Webhook Collector:"; curl -sS $(WEBHOOK_SERVICE_URL) | jq
 	@echo ""
 	@echo "=== Prometheus Targets ==="
 	@curl -sS http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | {job:.labels.job, health:.health, lastError:.lastError}'
@@ -176,10 +180,12 @@ test:
 	./gradlew test
 	@echo ""
 	@echo "=== Test Summary ==="
-	@echo "person-service:        $$(find person-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
-	@echo "individuals-api:       $$(find individuals-api/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
-	@echo "transaction-service:   $$(find transaction-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
-	@echo "fake-payment-provider: $$(find fake-payment-provider/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "person-service:            $$(find person-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "individuals-api:           $$(find individuals-api/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "transaction-service:       $$(find transaction-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "fake-payment-provider:     $$(find fake-payment-provider/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "payment-service:           $$(find payment-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "webhook-collector-service: $$(find webhook-collector-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
 
 test-unit:
 	@echo "Running unit tests only..."
@@ -205,21 +211,33 @@ test-payment:
 	@echo "Running payment-service tests..."
 	./gradlew :payment-service:test
 
+test-webhook:
+	@echo "Running webhook-collector-service tests..."
+	./gradlew :webhook-collector-service:test
+
 test-coverage:
 	@echo "Generating coverage reports..."
 	./gradlew jacocoTestReport
 	@echo "Coverage reports generated:"
-	@echo "  person-service:        person-service/build/reports/jacoco/test/html/index.html"
-	@echo "  individuals-api:       individuals-api/build/reports/jacoco/test/html/index.html"
-	@echo "  transaction-service:   transaction-service/build/reports/jacoco/test/html/index.html"
-	@echo "  fake-payment-provider: fake-payment-provider/build/reports/jacoco/test/html/index.html"
+	@echo "  person-service:            person-service/build/reports/jacoco/test/html/index.html"
+	@echo "  individuals-api:           individuals-api/build/reports/jacoco/test/html/index.html"
+	@echo "  transaction-service:       transaction-service/build/reports/jacoco/test/html/index.html"
+	@echo "  fake-payment-provider:     fake-payment-provider/build/reports/jacoco/test/html/index.html"
+	@echo "  payment-service:           payment-service/build/reports/jacoco/test/html/index.html"
+	@echo "  webhook-collector-service: webhook-collector-service/build/reports/jacoco/test/html/index.html"
 
 # Nexus
 nexus-publish:
-	@echo "Publishing person-service-client to Nexus..."
+	@echo "Publishing artifacts to Nexus..."
 	./gradlew :common:publish -PnexusUsername=admin -PnexusPassword=admin123
 	@echo "Verifying artifact in Nexus..."
 	@curl -u admin:admin123 'http://localhost:8091/service/rest/v1/components?repository=maven-releases' | jq '.items[] | {name, group, version}'
+
+nexus-publish-common:
+	@echo "Publishing common-library to Nexus..."
+	./gradlew :common-library:publish
+	@echo "Verifying common-library in Nexus..."
+	@curl -u admin:admin123 'http://localhost:8091/service/rest/v1/components?repository=maven-releases' | jq '.items[] | select(.name=="common-library") | {name, group, version}'
 
 nexus-password:
 	@echo "Nexus admin password:"
@@ -240,5 +258,8 @@ db-fpp:
 
 db-payment:
 	@docker exec -it payment-postgres psql -U payment -d payment
+
+db-webhook:
+	@docker exec -it webhook-db psql -U webhook -d webhook
 
 rebuild: clean all

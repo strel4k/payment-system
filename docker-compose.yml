@@ -588,6 +588,60 @@ services:
       timeout: 3s
       retries: 20
 
+    # ==================== WEBHOOK COLLECTOR SERVICE ====================
+  webhook-collector-service:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: webhook-collector-service/Dockerfile
+    container_name: webhook-collector-service
+    environment:
+      SERVER_PORT: "8086"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://webhook-postgres:5432/webhook
+      SPRING_DATASOURCE_USERNAME: ${WEBHOOK_DB_USERNAME:-webhook}
+      SPRING_DATASOURCE_PASSWORD: ${WEBHOOK_DB_PASSWORD:-webhook}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      WEBHOOK_SECRET_TOKEN: ${WEBHOOK_SECRET_TOKEN}
+      WEBHOOK_HMAC_SECRET: ${WEBHOOK_HMAC_SECRET}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: webhook-collector-service
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+    ports:
+      - "8086:8086"
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:8086/actuator/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    depends_on:
+      webhook-postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+
+  webhook-postgres:
+    image: postgres:16-alpine
+    container_name: webhook-postgres
+    environment:
+      POSTGRES_DB: webhook
+      POSTGRES_USER: ${WEBHOOK_DB_USERNAME:-webhook}
+      POSTGRES_PASSWORD: ${WEBHOOK_DB_PASSWORD:-webhook}
+    ports:
+      - "5439:5432"
+    volumes:
+      - webhook_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${WEBHOOK_DB_USERNAME:-webhook} -d webhook" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   currency_postgres_data:
   person_postgres_data:
@@ -597,3 +651,4 @@ volumes:
   nexus_data:
   fpp_postgres_data:
   payment_postgres_data:
+  webhook_postgres_data:
