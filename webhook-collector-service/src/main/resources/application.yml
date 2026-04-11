@@ -1,0 +1,75 @@
+server:
+  port: ${SERVER_PORT:8086}
+
+spring:
+  application:
+    name: webhook-collector-service
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5439/webhook}
+    username: ${SPRING_DATASOURCE_USERNAME:webhook}
+    password: ${SPRING_DATASOURCE_PASSWORD:webhook}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:30000}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      retries: 3
+      properties:
+        spring.json.add.type.headers: false
+
+# ── Безопасность webhook ────────────────────────────────────────
+webhook:
+  security:
+    token: ${WEBHOOK_SECRET_TOKEN}
+    hmac-secret: ${WEBHOOK_HMAC_SECRET}
+
+# ── Kafka топики ────────────────────────────────────────────────
+kafka:
+  topics:
+    payment-status-updated: ${KAFKA_TOPIC_PAYMENT_STATUS_UPDATED:payment.status.updated}
+    partitions: ${KAFKA_TOPIC_PARTITIONS:3}
+    replicas: ${KAFKA_TOPIC_REPLICAS:1}
+
+# ── Actuator ────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+# ── Logging ─────────────────────────────────────────────────────
+logging:
+  level:
+    com.example.webhookcollector: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.flywaydb: INFO

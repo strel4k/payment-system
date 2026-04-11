@@ -20,5 +20,6 @@ include(
     "currency-rate-service:currency-rate-service-api-client",
     "fake-payment-provider",
     "payment-service",
-    "payment-service:payment-service-api-client"
+    "payment-service:payment-service-api-client",
+    "webhook-collector-service"
 )

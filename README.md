@@ -12,10 +12,11 @@
 
 ## 🎯 Возможности
 
-- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service + currency-rate-service + fake-payment-provider + **payment-service**
+- ✅ **Микросервисная архитектура** — individuals-api (orchestrator) + person-service + transaction-service + currency-rate-service + fake-payment-provider + payment-service + webhook-collector-service
 - ✅ **Wallet Management** — создание и управление кошельками пользователей
 - ✅ **Transaction Processing** — deposit, withdrawal, transfer с двухфазным подтверждением
 - ✅ **Payment Service** — управление методами оплаты, проведение платежей через FPP, компенсация при ошибках
+- ✅ **Webhook Collector Service** — приём и обработка webhook-уведомлений от FPP, двухуровневая защита (токен + HMAC-SHA256), публикация в Kafka
 - ✅ **Currency Rate Service** — актуальные курсы валют, cross-rate расчёт через USD, корректирующие коэффициенты, ShedLock
 - ✅ **OpenFeign** — декларативные HTTP-клиенты (individuals-api → currency-rate-service)
 - ✅ **Event-Driven Architecture** — Apache Kafka для асинхронных операций
@@ -40,18 +41,8 @@
 | [currency-rate-service/README.md](currency-rate-service/README.md) | Currency Rate Service API и архитектура |
 | [fake-payment-provider/README.md](fake-payment-provider/README.md) | Fake Payment Provider — эмулятор платёжного шлюза |
 | [payment-service/README.md](payment-service/README.md) | Payment Service — управление методами оплаты и платежами |
+| [webhook-collector-service/README.md](webhook-collector-service/README.md) | Webhook Collector Service — приём webhook, безопасность, Kafka |
 | [docs/TEST_COVERAGE_REPORT.md](docs/TEST_COVERAGE_REPORT.md) | Отчёт о покрытии тестами |
-
-### Диаграммы (PlantUML)
-
-| Диаграмма | Описание |
-|-----------|----------|
-| [docs/architecture/diagrams/context.puml](docs/architecture/diagrams/context.puml) | C4 Context Diagram |
-| [docs/architecture/diagrams/container.puml](docs/architecture/diagrams/container.puml) | C4 Container Diagram |
-| [docs/architecture/diagrams/sequence-registration.puml](docs/architecture/diagrams/sequence-registration.puml) | User Registration Flow |
-| [docs/architecture/diagrams/sequence-deposit.puml](docs/architecture/diagrams/sequence-deposit.puml) | Deposit Flow (async Kafka) |
-| [docs/architecture/diagrams/sequence-withdrawal.puml](docs/architecture/diagrams/sequence-withdrawal.puml) | Withdrawal Flow (semi-sync) |
-| [docs/architecture/diagrams/sequence-transfer.puml](docs/architecture/diagrams/sequence-transfer.puml) | Transfer Flow (sync atomic) |
 
 ---
 
@@ -66,12 +57,6 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                    Individuals API                          │
 │              (Orchestrator, WebFlux, Port 8081)             │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │ • Authentication & Registration                      │   │
-│  │ • JWT Token Management                               │   │
-│  │ • Proxy to Person Service & Transaction Service      │   │
-│  │ • Currency rate fetch via OpenFeign                  │   │
-│  └──────────────────────────────────────────────────────┘   │
 └────┬──────────────┬──────────────┬──────────────┬───────────┘
      │              │              │              │
      ▼              ▼              ▼              ▼
@@ -79,41 +64,40 @@
 │   Person     │ │ Transaction  │ │ Keycloak │ │Currency Rate │
 │   Service    │ │   Service    │ │ (OAuth2) │ │   Service    │
 │   (8082)     │ │   (8083)     │ │  (8080)  │ │   (8085)     │
-└──────┬───────┘ └──────┬───────┘ └────┬─────┘ └──────┬───────┘
-       │                │              │              │
-       ▼                ▼              ▼              ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────┐ ┌──────────────┐
-│  Person DB   │ │Transaction DB│ │Keycloak  │ │ Currency DB  │
-│  (Postgres)  │ │  (Postgres)  │ │   DB     │ │  (Postgres)  │
-│    :5434     │ │    :5435     │ │  :5433   │ │    :5436     │
-└──────────────┘ └──────┬───────┘ └──────────┘ └──────────────┘
+└──────┬───────┘ └──────┬───────┘ └──────────┘ └──────────────┘
+       │                │
+       ▼                ▼
+┌──────────────┐ ┌──────────────┐
+│  Person DB   │ │Transaction DB│
+│  (Postgres)  │ │  (Postgres)  │
+│    :5434     │ │    :5435     │
+└──────────────┘ └──────┬───────┘
                         │
                         ▼
-                 ┌──────────────┐        ┌───────────────────────┐
-                 │    Kafka     │        │ exchangerate-api.com  │
-                 │   (Events)   │        │   (External Rates)    │
-                 │    :9092     │        └───────────────────────┘
-                 └──────────────┘
-                        │
-┌───────────────────────▼─────────────────────────────────────┐
-│                 Observability Stack                         │
-│  Prometheus:9090 │ Grafana:3000 │ Loki:3100 │ Tempo:3200    │
-│                  Promtail (log shipper)                     │
-└─────────────────────────────────────────────────────────────┘
-
                  ┌──────────────┐
-                 │  Nexus OSS   │
-                 │    :8091     │
-                 │ Maven repo   │
-                 └──────────────┘
+                 │    Kafka     │
+                 │   (Events)   │
+                 │    :9092     │
+                 └──────┬───────┘
+                        │
+         ┌──────────────┴──────────────┐
+         ▼                             ▼
+┌──────────────────┐         ┌──────────────────────┐
+│  Payment Service │         │ Webhook Collector    │
+│     (8083)       │         │ Service  (8086)      │
+│  • Basic Auth    │         │ • X-Webhook-Token    │
+│  • Outbox        │         │ • HMAC-SHA256        │
+└────────┬─────────┘         └──────────┬───────────┘
+         │                              │
+         ▼                              ▼
+┌──────────────────┐         ┌──────────────────────┐
+│  Payment DB      │         │  Webhook DB          │
+│  (Postgres :5438)│         │  (Postgres :5439)    │
+└──────────────────┘         └──────────────────────┘
 
 ┌──────────────────────────────────────────────┐
 │          Fake Payment Provider               │
 │    (Payment Gateway Emulator, Port 8090)     │
-│  • Basic Auth (merchantId / secretKey)       │
-│  • POST /api/v1/transactions                 │
-│  • POST /api/v1/payouts                      │
-│  • POST /webhook/transaction|payout          │
 └──────────────────┬───────────────────────────┘
                    │
                    ▼
@@ -122,6 +106,17 @@
             │  (Postgres)  │
             │    :5437     │
             └──────────────┘
+
+┌───────────────────────────────────────────────────────────────┐
+│                 Observability Stack                           │
+│  Prometheus:9090 │ Grafana:3000 │ Loki:3100 │ Tempo:3200     │
+└───────────────────────────────────────────────────────────────┘
+
+┌──────────────┐
+│  Nexus OSS   │
+│    :8091     │
+│ Maven repo   │
+└──────────────┘
 ```
 
 ---
@@ -135,18 +130,20 @@
 
 ### 1. Клонирование репозитория
 ```bash
-git clone 
+git clone <repository-url>
 cd payment-system
 ```
 
 ### 2. Запуск всех сервисов
 ```bash
+make up
+# или
 docker compose up -d
 ```
 
 ### 3. Проверка статуса
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
+make health
 ```
 
 Должны быть запущены:
@@ -154,7 +151,9 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 - ✅ person-service (8082)
 - ✅ transaction-service (8083)
 - ✅ currency-rate-service (8085)
+- ✅ payment-service (8083)
 - ✅ fake-payment-provider (8090)
+- ✅ webhook-collector-service (8086)
 - ✅ keycloak (8080)
 - ✅ kafka (9092)
 - ✅ nexus (8091)
@@ -166,7 +165,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 ### 4. Smoke test
 ```bash
 curl http://localhost:8081/actuator/health
-curl http://localhost:8085/actuator/health
+curl http://localhost:8086/actuator/health
 curl "http://localhost:8085/api/v1/rates?from=USD&to=EUR" | jq
 ```
 
@@ -193,6 +192,9 @@ curl -X POST http://localhost:8081/v1/auth/registration \
 | **Person Service** | http://localhost:8082 | — | User Data Management (internal) |
 | **Transaction Service** | http://localhost:8083 | — | Wallets & Transactions (internal) |
 | **Currency Rate Service** | http://localhost:8085 | — | Exchange rates (internal) |
+| **Payment Service** | http://localhost:8083 | — | Payment processing (internal) |
+| **Webhook Collector** | http://localhost:8086 | — | Webhook processing (internal) |
+| **Fake Payment Provider** | http://localhost:8090 | merchant-1/secret123 | Payment Gateway Emulator |
 | **Keycloak** | http://localhost:8080 | admin/admin | Identity Provider |
 | **Nexus OSS** | http://localhost:8091 | admin/admin123 | Maven Repository |
 | **Grafana** | http://localhost:3000 | admin/admin | Dashboards |
@@ -235,27 +237,6 @@ GET  /v1/transactions/{uid}/status     # Get status
 
 ---
 
-## 💱 Currency Rate Service
-
-### API
-```bash
-GET /api/v1/rates?from=USD&to=EUR             # Актуальный курс
-GET /api/v1/rates?from=USD&to=EUR&timestamp=  # Курс на дату
-GET /api/v1/currencies                         # Список валют
-GET /api/v1/rate-providers                     # Провайдеры
-```
-
-### Поддерживаемые валюты
-USD, EUR, RUB, GBP, CNY, JPY, CHF, CAD, AUD, TRY (10 валют, 90 пар)
-
-### Корректирующие коэффициенты
-```
-rate_final = rate_raw * factor
-```
-Коэффициенты хранятся в таблице `rate_correction_factors`. Примеры: USD→EUR `0.9980`, USD→RUB `1.0020`.
-
----
-
 ## 📊 Kafka Topics
 
 | Topic | Producer | Consumer | Purpose |
@@ -265,6 +246,7 @@ rate_final = rate_raw * factor
 | `withdrawal-requested` | transaction-service | Payment Gateway | Initiate withdrawal |
 | `withdrawal-completed` | Payment Gateway | transaction-service | Confirm withdrawal |
 | `withdrawal-failed` | Payment Gateway | transaction-service | Refund on failure |
+| `payment.status.updated` | webhook-collector-service | transaction-service | Webhook status update |
 
 ---
 
@@ -279,8 +261,13 @@ rate_final = rate_raw * factor
 ./gradlew :individuals-api:test
 ./gradlew :transaction-service:test
 ./gradlew :currency-rate-service:test
-./gradlew :currency-rate-service:integrationTest
 ./gradlew :fake-payment-provider:test
+./gradlew :payment-service:test
+./gradlew :webhook-collector-service:test
+
+# Makefile shortcuts
+make test
+make test-webhook
 ```
 
 ---
@@ -292,21 +279,20 @@ rate_final = rate_raw * factor
 ./gradlew build
 ```
 
-### Пересборка одного сервиса (быстро)
+### Публикация common-library в Nexus
 ```bash
-# Без пересборки Docker образа — копируем jar напрямую
-./gradlew :individuals-api:bootJar -x test
-docker cp individuals-api/build/libs/individuals-api-0.0.1-SNAPSHOT.jar individuals-api:/app/app.jar
-docker restart individuals-api
+make nexus-publish-common
+# или
+./gradlew :common-library:publish
 ```
 
 ### Запуск отдельных сервисов локально
 ```bash
 # Инфраструктура
-docker compose up -d zookeeper kafka transaction-postgres keycloak-postgres keycloak person-postgres currency-postgres
+docker compose up -d zookeeper kafka transaction-postgres keycloak-postgres keycloak person-postgres webhook-db
 
 # Сервисы
-./gradlew :currency-rate-service:bootRun
+./gradlew :webhook-collector-service:bootRun
 ./gradlew :transaction-service:bootRun
 ./gradlew :individuals-api:bootRun
 ```
@@ -317,56 +303,27 @@ docker compose up -d zookeeper kafka transaction-postgres keycloak-postgres keyc
 
 ### Сервис не стартует
 ```bash
-# Проверка логов
-docker logs individuals-api
-docker logs person-service
-
-# Проверка зависимостей
+docker logs webhook-collector-service
+docker logs payment-service
 docker-compose ps
 ```
 
 ### База данных не подключается
 ```bash
-# Проверка доступности PostgreSQL
-docker exec -it person-postgres psql -U person -d person_db -c "\dt person.*"
-```
-
-### Tempo не показывает трассы
-```bash
-# Проверка spans в Tempo
-docker logs tempo | grep "Start span"
-
-# Проверка OTel агента в контейнере
-docker exec individuals-api ls -la /app/opentelemetry-javaagent.jar
-```
-
-### Nexus недоступен
-```bash
-# Получить admin пароль
-docker exec nexus cat /nexus-data/admin.password
-
-# Проверка repository
-curl -u admin:<password> http://localhost:8091/service/rest/v1/repositories
+make db-webhook
+make db-payment
 ```
 
 ### Kafka consumer не обрабатывает события
 ```bash
-docker exec kafka kafka-consumer-groups \
-  --bootstrap-server localhost:9092 \
-  --group transaction-service --describe
+make kafka-consumer-groups
+make kafka-topics
 ```
 
-### Проверка логов
+### Nexus недоступен
 ```bash
-docker logs transaction-service 2>&1 | grep -i "error\|exception" | tail -20
+make nexus-password
 ```
-
-### База данных
-```bash
-docker exec transaction-postgres psql -U postgres -d transaction \
-  -c "SELECT uid, type, status, amount FROM transactions ORDER BY created_at DESC LIMIT 10;"
-```
-
 
 ---
 
