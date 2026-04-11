@@ -1,7 +1,7 @@
 package com.example.webhookcollector.kafka;
 
 import com.example.webhookcollector.controller.dto.WebhookPayload;
-import com.example.commonlibrary.event.PaymentStatusUpdatedEvent;
+import com.example.webhookcollector.kafka.event.PaymentStatusUpdatedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

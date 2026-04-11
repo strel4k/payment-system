@@ -59,9 +59,6 @@ repositories {
 }
 
 dependencies {
-    // ── Shared DTO-модели (common-library) ────────────────────────
-    implementation(project(":common-library"))
-
     // ── Web ──────────────────────────────────────────────────────
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")

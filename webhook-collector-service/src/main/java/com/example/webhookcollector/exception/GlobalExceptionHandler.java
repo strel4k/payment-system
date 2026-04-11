@@ -15,13 +15,6 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(WebhookAuthenticationException.class)
-    public ResponseEntity<Map<String, String>> handleAuthentication(WebhookAuthenticationException ex) {
-        log.warn("Webhook authentication failed: {}", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(errorBody("UNAUTHORIZED", ex.getMessage()));
-    }
-
     @ExceptionHandler(JsonProcessingException.class)
     public ResponseEntity<Map<String, String>> handleJsonProcessing(JsonProcessingException ex) {
         log.warn("Invalid JSON in request body: {}", ex.getOriginalMessage());
