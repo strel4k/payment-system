@@ -17,6 +17,7 @@
 - ✅ **Transaction Processing** — deposit, withdrawal, transfer с двухфазным подтверждением
 - ✅ **Payment Service** — управление методами оплаты, проведение платежей через FPP, компенсация при ошибках
 - ✅ **Webhook Collector Service** — приём и обработка webhook-уведомлений от FPP, двухуровневая защита (токен + HMAC-SHA256), публикация в Kafka
+- ✅ **Notification Service** — приём уведомлений из Kafka (Avro + Schema Registry), сохранение в БД, отправка email при регистрации, REST API
 - ✅ **Currency Rate Service** — актуальные курсы валют, cross-rate расчёт через USD, корректирующие коэффициенты, ShedLock
 - ✅ **OpenFeign** — декларативные HTTP-клиенты (individuals-api → currency-rate-service)
 - ✅ **Event-Driven Architecture** — Apache Kafka для асинхронных операций
@@ -42,6 +43,7 @@
 | [fake-payment-provider/README.md](fake-payment-provider/README.md) | Fake Payment Provider — эмулятор платёжного шлюза |
 | [payment-service/README.md](payment-service/README.md) | Payment Service — управление методами оплаты и платежами |
 | [webhook-collector-service/README.md](webhook-collector-service/README.md) | Webhook Collector Service — приём webhook, безопасность, Kafka |
+| [notification-service/README.md](notification-service/README.md) | Notification Service — Kafka Avro consumer, email, REST API |
 | [docs/TEST_COVERAGE_REPORT.md](docs/TEST_COVERAGE_REPORT.md) | Отчёт о покрытии тестами |
 
 ---
@@ -109,7 +111,7 @@
 
 ┌───────────────────────────────────────────────────────────────┐
 │                 Observability Stack                           │
-│  Prometheus:9090 │ Grafana:3000 │ Loki:3100 │ Tempo:3200     │
+│  Prometheus:9090 │ Grafana:3000 │ Loki:3100 │ Tempo:3200      │
 └───────────────────────────────────────────────────────────────┘
 
 ┌──────────────┐
@@ -194,6 +196,7 @@ curl -X POST http://localhost:8081/v1/auth/registration \
 | **Currency Rate Service** | http://localhost:8085 | — | Exchange rates (internal) |
 | **Payment Service** | http://localhost:8083 | — | Payment processing (internal) |
 | **Webhook Collector** | http://localhost:8086 | — | Webhook processing (internal) |
+| **Notification Service** | http://localhost:8087 | — | Notifications (internal) |
 | **Fake Payment Provider** | http://localhost:8090 | merchant-1/secret123 | Payment Gateway Emulator |
 | **Keycloak** | http://localhost:8080 | admin/admin | Identity Provider |
 | **Nexus OSS** | http://localhost:8091 | admin/admin123 | Maven Repository |
@@ -247,6 +250,7 @@ GET  /v1/transactions/{uid}/status     # Get status
 | `withdrawal-completed` | Payment Gateway | transaction-service | Confirm withdrawal |
 | `withdrawal-failed` | Payment Gateway | transaction-service | Refund on failure |
 | `payment.status.updated` | webhook-collector-service | transaction-service | Webhook status update |
+| `notification.created` | transaction-service | notification-service | User notification (Avro) |
 
 ---
 
@@ -264,6 +268,7 @@ GET  /v1/transactions/{uid}/status     # Get status
 ./gradlew :fake-payment-provider:test
 ./gradlew :payment-service:test
 ./gradlew :webhook-collector-service:test
+./gradlew :notification-service:test
 
 # Makefile shortcuts
 make test
