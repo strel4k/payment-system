@@ -1,7 +1,8 @@
 package com.example.notificationservice.mapper;
 
+import com.example.dto.notification.NotificationResponse;
+import com.example.dto.notification.NotificationStatus;
 import com.example.kafka.NotificationCreated;
-import com.example.notificationservice.controller.dto.NotificationResponse;
 import com.example.notificationservice.entity.Notification;
 import org.springframework.stereotype.Component;
 
@@ -23,16 +24,16 @@ public class NotificationMapper {
     }
 
     public NotificationResponse toResponse(Notification notification) {
-        return new NotificationResponse(
-                notification.getUid(),
-                notification.getUserUid(),
-                notification.getMessage(),
-                notification.getSubject(),
-                notification.getCreatedBy(),
-                notification.getRecipientEmail(),
-                notification.getStatus(),
-                notification.getCreatedAt(),
-                notification.getModifiedAt()
-        );
+        NotificationResponse response = new NotificationResponse();
+        response.setUid(notification.getUid());
+        response.setUserUid(notification.getUserUid());
+        response.setMessage(notification.getMessage());
+        response.setSubject(notification.getSubject());
+        response.setCreatedBy(notification.getCreatedBy());
+        response.setRecipientEmail(notification.getRecipientEmail());
+        response.setStatus(NotificationStatus.fromValue(notification.getStatus().name()));
+        response.setCreatedAt(notification.getCreatedAt());
+        response.setModifiedAt(notification.getModifiedAt());
+        return response;
     }
 }

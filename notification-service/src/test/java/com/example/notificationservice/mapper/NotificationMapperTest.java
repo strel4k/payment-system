@@ -1,9 +1,9 @@
 package com.example.notificationservice.mapper;
 
+import com.example.dto.notification.NotificationResponse;
+import com.example.dto.notification.NotificationStatus;
 import com.example.kafka.NotificationCreated;
-import com.example.notificationservice.controller.dto.NotificationResponse;
 import com.example.notificationservice.entity.Notification;
-import com.example.notificationservice.entity.NotificationStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +35,7 @@ class NotificationMapperTest {
         assertThat(entity.getSubject()).isEqualTo("REGISTRATION");
         assertThat(entity.getCreatedBy()).isEqualTo("individuals-api");
         assertThat(entity.getRecipientEmail()).isEqualTo("user@test.com");
-        assertThat(entity.getStatus()).isEqualTo(NotificationStatus.NEW);
+        assertThat(entity.getStatus()).isEqualTo(com.example.notificationservice.entity.NotificationStatus.NEW);
     }
 
     @Test
@@ -55,7 +55,7 @@ class NotificationMapperTest {
     }
 
     @Test
-    @DisplayName("toResponse — корректно маппит все поля entity в DTO")
+    @DisplayName("toResponse — корректно маппит все поля entity в сгенерированный DTO")
     void toResponse_mapsAllFields() {
         UUID uid = UUID.randomUUID();
         Notification notification = Notification.builder()
@@ -65,17 +65,16 @@ class NotificationMapperTest {
                 .createdBy("individuals-api")
                 .recipientEmail("user@test.com")
                 .build();
-
         notification.setUid(uid);
 
         NotificationResponse response = mapper.toResponse(notification);
 
-        assertThat(response.uid()).isEqualTo(uid);
-        assertThat(response.userUid()).isEqualTo(USER_UID);
-        assertThat(response.message()).isEqualTo("Welcome!");
-        assertThat(response.subject()).isEqualTo("REGISTRATION");
-        assertThat(response.createdBy()).isEqualTo("individuals-api");
-        assertThat(response.recipientEmail()).isEqualTo("user@test.com");
-        assertThat(response.status()).isEqualTo(NotificationStatus.NEW);
+        assertThat(response.getUid()).isEqualTo(uid);
+        assertThat(response.getUserUid()).isEqualTo(USER_UID);
+        assertThat(response.getMessage()).isEqualTo("Welcome!");
+        assertThat(response.getSubject()).isEqualTo("REGISTRATION");
+        assertThat(response.getCreatedBy()).isEqualTo("individuals-api");
+        assertThat(response.getRecipientEmail()).isEqualTo("user@test.com");
+        assertThat(response.getStatus()).isEqualTo(NotificationStatus.NEW);
     }
 }

@@ -1,8 +1,11 @@
+import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
+
 plugins {
     java
     id("org.springframework.boot") version "3.5.0"
     id("io.spring.dependency-management") version "1.1.6"
     id("com.github.davidmc24.gradle.plugin.avro") version "1.9.1"
+    id("org.openapi.generator") version "7.9.0"
     jacoco
 }
 
@@ -35,6 +38,7 @@ configurations.all {
     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
 }
 
+// ── Nexus credentials ────────────────────────────────────────────
 file("${rootDir}/.env").takeIf { it.exists() }?.readLines()?.forEach { line ->
     if (line.isNotBlank() && !line.startsWith("#") && line.contains("=")) {
         val (key, value) = line.split("=", limit = 2)
@@ -45,6 +49,59 @@ file("${rootDir}/.env").takeIf { it.exists() }?.readLines()?.forEach { line ->
 val nexusUrl      = System.getenv("NEXUS_URL")      ?: System.getProperty("NEXUS_URL")      ?: "http://localhost:8091/repository/maven-releases/"
 val nexusUser     = System.getenv("NEXUS_USERNAME") ?: System.getProperty("NEXUS_USERNAME") ?: "admin"
 val nexusPassword = System.getenv("NEXUS_PASSWORD") ?: System.getProperty("NEXUS_PASSWORD") ?: "admin123"
+
+// ── OpenAPI генерация ─────────────────────────────────────────────
+val openApiSpec = "$projectDir/src/main/resources/openapi/notification-service.yaml"
+val generatedDir = layout.buildDirectory.dir("generated-sources/openapi-notification-service")
+
+tasks.register<GenerateTask>("openApiGenerateNotificationServiceApi") {
+    generatorName.set("spring")
+    inputSpec.set(openApiSpec)
+    outputDir.set(generatedDir.get().asFile.absolutePath)
+
+    apiPackage.set("com.example.notificationservice.api")
+    modelPackage.set("com.example.dto.notification")
+    invokerPackage.set("com.example.notificationservice.invoker")
+
+    configOptions.set(
+        mapOf(
+            "useSpringBoot3"       to "true",
+            "interfaceOnly"        to "true",
+            "skipDefaultInterface" to "true",
+            "useTags"              to "true",
+            "dateLibrary"          to "java8-localdatetime",
+            "openApiNullable"      to "false"
+        )
+    )
+
+    globalProperties.set(
+        mapOf(
+            "models"          to "",
+            "modelDocs"       to "false",
+            "modelTests"      to "false",
+            "apis"            to "",
+            "supportingFiles" to "false"
+        )
+    )
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir(generatedDir.map { it.dir("src/main/java") })
+        }
+    }
+}
+
+tasks.named("compileJava") {
+    dependsOn("openApiGenerateNotificationServiceApi")
+}
+
+tasks.named("clean") {
+    doLast {
+        delete(generatedDir)
+    }
+}
 
 repositories {
     mavenLocal()
@@ -67,6 +124,7 @@ dependencies {
     // ── Web ──────────────────────────────────────────────────────
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    implementation("io.swagger.core.v3:swagger-annotations-jakarta:2.2.25")
 
     // ── Security ─────────────────────────────────────────────────
     implementation("org.springframework.boot:spring-boot-starter-security")
@@ -140,7 +198,9 @@ tasks.jacocoTestReport {
                 exclude(
                     "**/config/**",
                     "**/*Application.class",
-                    "**/entity/**"
+                    "**/entity/**",
+                    "**/invoker/**",
+                    "**/dto/**"
                 )
             }
         })

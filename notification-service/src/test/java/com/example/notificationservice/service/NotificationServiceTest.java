@@ -1,6 +1,6 @@
 package com.example.notificationservice.service;
 
-import com.example.notificationservice.controller.dto.NotificationResponse;
+import com.example.dto.notification.NotificationResponse;
 import com.example.notificationservice.email.EmailService;
 import com.example.notificationservice.entity.Notification;
 import com.example.notificationservice.entity.NotificationStatus;
@@ -36,10 +36,8 @@ class NotificationServiceTest {
     @InjectMocks
     private NotificationService notificationService;
 
-    private static final UUID USER_UID = UUID.randomUUID();
+    private static final UUID USER_UID  = UUID.randomUUID();
     private static final UUID NOTIF_UID = UUID.randomUUID();
-
-    // ── processNotification ───────────────────────────────────────
 
     @Test
     @DisplayName("processNotification — REGISTRATION + email → сохраняет и отправляет email")
@@ -80,8 +78,6 @@ class NotificationServiceTest {
         verify(emailService, never()).sendEmail(any(), any(), any());
     }
 
-    // ── getByUserUid ──────────────────────────────────────────────
-
     @Test
     @DisplayName("getByUserUid — возвращает список NotificationResponse")
     void getByUserUid_returnsMappedResponses() {
@@ -96,8 +92,6 @@ class NotificationServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0)).isEqualTo(response);
     }
-
-    // ── updateStatus ──────────────────────────────────────────────
 
     @Test
     @DisplayName("updateStatus — делегирует в persistenceService и маппит результат")
@@ -115,8 +109,6 @@ class NotificationServiceTest {
         verify(persistenceService).updateStatus(NOTIF_UID, NotificationStatus.COMPLETED);
     }
 
-    // ── helpers ───────────────────────────────────────────────────
-
     private Notification buildNotification(String subject, String recipientEmail) {
         return Notification.builder()
                 .userUid(USER_UID)
@@ -128,9 +120,12 @@ class NotificationServiceTest {
     }
 
     private NotificationResponse buildResponse() {
-        return new NotificationResponse(
-                NOTIF_UID, USER_UID, "Welcome!", "REGISTRATION",
-                "individuals-api", null, NotificationStatus.NEW, null, null
-        );
+        NotificationResponse response = new NotificationResponse();
+        response.setUid(NOTIF_UID);
+        response.setUserUid(USER_UID);
+        response.setMessage("Welcome!");
+        response.setSubject("REGISTRATION");
+        response.setStatus(com.example.dto.notification.NotificationStatus.NEW);
+        return response;
     }
 }

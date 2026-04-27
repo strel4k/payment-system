@@ -1,6 +1,6 @@
 package com.example.notificationservice.service;
 
-import com.example.notificationservice.controller.dto.NotificationResponse;
+import com.example.dto.notification.NotificationResponse;
 import com.example.notificationservice.email.EmailService;
 import com.example.notificationservice.entity.Notification;
 import com.example.notificationservice.entity.NotificationStatus;

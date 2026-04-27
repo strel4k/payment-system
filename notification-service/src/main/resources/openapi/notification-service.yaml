@@ -1,0 +1,139 @@
+openapi: 3.0.3
+info:
+  title: notification-service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8087
+
+tags:
+  - name: notifications
+
+paths:
+
+  /api/v1/notifications/{userUid}:
+    get:
+      tags: [notifications]
+      operationId: getNotificationsByUserUid
+      summary: Получение всех уведомлений пользователя
+      parameters:
+        - in: path
+          name: userUid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список уведомлений
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationResponse'
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/notifications/{id}/status:
+    patch:
+      tags: [notifications]
+      operationId: updateNotificationStatus
+      summary: Обновление статуса уведомления
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationStatusRequest'
+      responses:
+        '200':
+          description: Статус обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '400':
+          description: Невалидный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Уведомление не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+
+    NotificationStatus:
+      type: string
+      enum:
+        - NEW
+        - COMPLETED
+
+    NotificationResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+          format: uuid
+        userUid:
+          type: string
+          format: uuid
+        message:
+          type: string
+        subject:
+          type: string
+        createdBy:
+          type: string
+        recipientEmail:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/NotificationStatus'
+        createdAt:
+          type: string
+          format: date-time
+        modifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    NotificationStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/NotificationStatus'
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+        message:
+          type: string
