@@ -1,0 +1,34 @@
+{
+  "namespace": "com.example.kafka",
+  "type": "record",
+  "name": "NotificationCreated",
+  "doc": "Событие создания уведомления. Публикуется Transaction Service в топик notification.created.",
+  "fields": [
+    {
+      "name": "message",
+      "type": "string",
+      "doc": "Текст уведомления"
+    },
+    {
+      "name": "userUid",
+      "type": "string",
+      "doc": "UID пользователя — получателя уведомления"
+    },
+    {
+      "name": "subject",
+      "type": "string",
+      "doc": "Тема уведомления (например REGISTRATION, PAYMENT_COMPLETED)"
+    },
+    {
+      "name": "createdBy",
+      "type": "string",
+      "doc": "Идентификатор сервиса-источника события"
+    },
+    {
+      "name": "recipientEmail",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Email адрес получателя. Обязателен при subject=REGISTRATION для отправки email-уведомления."
+    }
+  ]
+}

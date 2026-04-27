@@ -16,14 +16,15 @@ TRANSACTION_SERVICE_URL = http://localhost:8083/actuator/health
 FPP_URL                 = http://localhost:8090/actuator/health
 PAYMENT_SERVICE_URL     = http://localhost:8084/actuator/health
 WEBHOOK_SERVICE_URL     = http://localhost:8086/actuator/health
+NOTIFICATION_SERVICE_URL = http://localhost:8087/actuator/health
 
 # Infrastructure services (without Kafka for basic infra)
 INFRA_SERVICES ?= person-postgres keycloak-postgres individuals-keycloak nexus loki prometheus grafana promtail tempo
 
 # Full infrastructure including Kafka
-INFRA_FULL ?= $(INFRA_SERVICES) zookeeper kafka transaction-postgres kafka-exporter person-postgres-exporter transaction-postgres-exporter keycloak-postgres-exporter payment-postgres fpp-postgres webhook-db
+INFRA_FULL ?= $(INFRA_SERVICES) zookeeper kafka transaction-postgres kafka-exporter person-postgres-exporter transaction-postgres-exporter keycloak-postgres-exporter payment-postgres fpp-postgres webhook-db notification-db schema-registry
 
-.PHONY: all up start stop clean logs rebuild infra infra-full infra-logs infra-stop health loki-test test test-coverage nexus-publish nexus-publish-common nexus-password kafka-topics kafka-ui test-fpp db-fpp test-webhook db-webhook db-payment
+.PHONY: all up start stop clean logs rebuild infra infra-full infra-logs infra-stop health loki-test test test-coverage nexus-publish nexus-publish-common nexus-password kafka-topics kafka-ui test-fpp db-fpp test-webhook db-webhook db-payment test-notification db-notification
 
 all: infra-full start health
 
@@ -67,6 +68,8 @@ wait:
 	@$(call WAIT_HTTP,$(PAYMENT_SERVICE_URL))
 	@echo "Waiting for Webhook Collector Service..."
 	@$(call WAIT_HTTP,$(WEBHOOK_SERVICE_URL))
+	@echo "Waiting for Notification Service..."
+	@$(call WAIT_HTTP,$(NOTIFICATION_SERVICE_URL))
 
 stop:
 	$(DOCKER_COMPOSE) down
@@ -143,6 +146,7 @@ health:
 	@echo "Fake Payment Provider:"; curl -sS $(FPP_URL) | jq
 	@echo "Payment Service:"; curl -sS $(PAYMENT_SERVICE_URL) | jq
 	@echo "Webhook Collector:"; curl -sS $(WEBHOOK_SERVICE_URL) | jq
+	@echo "Notification Service:"; curl -sS $(NOTIFICATION_SERVICE_URL) | jq
 	@echo ""
 	@echo "=== Prometheus Targets ==="
 	@curl -sS http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | {job:.labels.job, health:.health, lastError:.lastError}'
@@ -186,6 +190,7 @@ test:
 	@echo "fake-payment-provider:     $$(find fake-payment-provider/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
 	@echo "payment-service:           $$(find payment-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
 	@echo "webhook-collector-service: $$(find webhook-collector-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
+	@echo "notification-service:      $$(find notification-service/build/test-results -name '*.xml' 2>/dev/null | xargs grep -h 'tests=' | grep -oP 'tests="\d+"' | head -1 || echo 'N/A')"
 
 test-unit:
 	@echo "Running unit tests only..."
@@ -215,6 +220,11 @@ test-webhook:
 	@echo "Running webhook-collector-service tests..."
 	./gradlew :webhook-collector-service:test
 
+test-notification:
+	@echo "Running notification-service tests..."
+	./gradlew :notification-service:generateAvroJava
+	./gradlew :notification-service:test
+
 test-coverage:
 	@echo "Generating coverage reports..."
 	./gradlew jacocoTestReport
@@ -225,6 +235,7 @@ test-coverage:
 	@echo "  fake-payment-provider:     fake-payment-provider/build/reports/jacoco/test/html/index.html"
 	@echo "  payment-service:           payment-service/build/reports/jacoco/test/html/index.html"
 	@echo "  webhook-collector-service: webhook-collector-service/build/reports/jacoco/test/html/index.html"
+	@echo "  notification-service:      notification-service/build/reports/jacoco/test/html/index.html"
 
 # Nexus
 nexus-publish:
@@ -261,5 +272,8 @@ db-payment:
 
 db-webhook:
 	@docker exec -it webhook-db psql -U webhook -d webhook
+
+db-notification:
+	@docker exec -it notification-db psql -U notification -d notification
 
 rebuild: clean all

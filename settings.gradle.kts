@@ -5,6 +5,7 @@ pluginManagement {
     }
     plugins {
         id("org.openapi.generator") version "7.9.0"
+        id("com.github.davidmc24.gradle.plugin.avro") version "1.9.1"
     }
 }
 
@@ -21,5 +22,6 @@ include(
     "fake-payment-provider",
     "payment-service",
     "payment-service:payment-service-api-client",
-    "webhook-collector-service"
+    "webhook-collector-service",
+    "notification-service"
 )

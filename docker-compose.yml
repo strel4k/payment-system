@@ -642,6 +642,88 @@ services:
       timeout: 3s
       retries: 20
 
+      # ==================== Schema Registry ====================
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    container_name: schema-registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/subjects" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+      # ==================== Notification DB ====================
+  notification-db:
+    image: postgres:16-alpine
+    container_name: notification-db
+    environment:
+      POSTGRES_DB: ${NOTIFICATION_DB_NAME:notification}
+      POSTGRES_USER: ${NOTIFICATION_DB_USERNAME:notification}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+    ports:
+      - "5440:5432"
+    volumes:
+      - notification_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${NOTIFICATION_DB_USERNAME:-notification} -d ${NOTIFICATION_DB_NAME:-notification}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+      # ==================== Notification Service ====================
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    container_name: notification-service
+    environment:
+      SERVER_PORT: 8087
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notification
+      SPRING_DATASOURCE_USERNAME: ${NOTIFICATION_DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_TOPIC_NOTIFICATION_CREATED: notification.created
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:false}
+      MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:false}
+      NOTIFICATION_EMAIL_FROM: ${NOTIFICATION_EMAIL_FROM:noreply@payment-system.com}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: notification-service
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+    ports:
+      - "8087:8087"
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:8087/actuator/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+
+
 volumes:
   currency_postgres_data:
   person_postgres_data:
@@ -652,3 +734,4 @@ volumes:
   fpp_postgres_data:
   payment_postgres_data:
   webhook_postgres_data:
+  notification_postgres_data:
